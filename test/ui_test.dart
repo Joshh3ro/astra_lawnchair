@@ -59,7 +59,8 @@ void main() {
         expect(tester.terminalState, containsText('Space'));
         expect(tester.terminalState, containsText('select'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Astra Lawnchair v0.1.0'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.0'));
+        expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
   });
@@ -79,7 +80,7 @@ void main() {
       } catch (_) {}
     });
 
-    test('MainScreen drills into configs, toggles queue, and pops back', () async {
+    test('MainScreen navigates top menu, drills into configs, toggles queue, and pops back', () async {
       const account1 = Account(
         name: 'AccountAlpha',
         folderPath: '/fake/alpha',
@@ -108,7 +109,16 @@ void main() {
           ),
         );
 
-        // Verify accounts are visible
+        // Verify Top-Level Menu is displayed first
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+        expect(tester.terminalState, containsText('Accounts (2 accounts)'));
+        expect(tester.terminalState, containsText('Hotkeys'));
+        expect(tester.terminalState, containsText('Settings'));
+        expect(tester.terminalState, containsText('Quit'));
+
+        // Press Enter on Accounts to enter accounts list
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [2]'));
         expect(tester.terminalState, containsText('AccountAlpha'));
         expect(tester.terminalState, containsText('AccountBeta'));
         expect(tester.terminalState, containsText('Launch queue is empty'));
@@ -130,12 +140,17 @@ void main() {
 
         // Press Backspace to return to accounts list
         await tester.sendKey(LogicalKey.backspace);
-        expect(tester.terminalState, containsText('MENU (Accounts) [2]'));
+        expect(tester.terminalState, containsText('MENU: Accounts [2]'));
         expect(tester.terminalState, containsText('(2 queued)'));
 
         // The staged launch queue remains visible on the right pane
         expect(tester.terminalState, containsText('AccountAlpha — "PvP"'));
         expect(tester.terminalState, containsText('AccountAlpha — "Farming"'));
+
+        // Press Backspace again to return to top-level menu
+        await tester.sendKey(LogicalKey.backspace);
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+        expect(tester.terminalState, containsText('Accounts (2 accounts, 2 queued)'));
       });
     });
 
@@ -166,5 +181,64 @@ void main() {
         expect(completedConfig!.rootPath, tempDir.path);
       });
     });
+
+    test('MainScreen Settings allows toggling client, cycling stagger, and editing root path', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final initialConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+      );
+      await configService.saveConfig(initialConfig);
+
+      await testNocterm('settings editor test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: initialConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            initialAccounts: const [],
+          ),
+        );
+
+        // Move down to Settings in Top Menu (index 2: Accounts -> Hotkeys -> Settings)
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.arrowDown);
+        expect(tester.terminalState, containsText('Settings'));
+
+        // Press Enter to open Settings editor
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Settings'));
+        expect(tester.terminalState, containsText('Client Parameter'));
+        expect(tester.terminalState, containsText('Active: Unity'));
+
+        // Toggle Client mode (Unity -> Flash)
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Active: Flash'));
+
+        // Verify persisted to disk
+        var reloaded = await configService.loadConfig();
+        expect(reloaded!.clientName, 'Flash');
+
+        // Move down to Launch Stagger Delay
+        await tester.sendKey(LogicalKey.arrowDown);
+        expect(tester.terminalState, containsText('Active: 400 ms'));
+
+        // Cycle Stagger Delay (400 -> 500 ms)
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Active: 500 ms'));
+        reloaded = await configService.loadConfig();
+        expect(reloaded!.staggerDelayMs, 500);
+
+        // Move down to Back and press Enter to return to Top Menu
+        await tester.sendKey(LogicalKey.arrowDown); // Root Path
+        await tester.sendKey(LogicalKey.arrowDown); // Back
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+      });
+    });
   });
 }
+
+String tempRootPath(Directory dir) => dir.path;

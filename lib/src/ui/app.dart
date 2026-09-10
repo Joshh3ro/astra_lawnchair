@@ -96,6 +96,7 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
 
     return MainScreen(
       config: currentConfig,
+      configService: _configService,
       scannerService: _scannerService,
       launcherService: _launcherService,
       initialAccounts: _accounts,

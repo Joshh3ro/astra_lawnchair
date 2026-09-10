@@ -53,6 +53,11 @@ class LawnchairTheme {
     color: Colors.gray,
   );
 
+  static const TextStyle footerLink = TextStyle(
+    color: Colors.cyan,
+    decoration: TextDecoration.underline,
+  );
+
   static const TextStyle statusSuccess = TextStyle(
     color: Colors.green,
     fontWeight: FontWeight.bold,

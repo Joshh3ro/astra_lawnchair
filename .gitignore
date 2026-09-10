@@ -5,3 +5,4 @@
 # User configurations and account caches
 configs/*.json
 *.exe
+/demo/

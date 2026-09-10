@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../theme.dart';
 
@@ -12,6 +13,18 @@ class FooterBar extends StatelessComponent {
     this.statusStyle,
     this.runHotkey = 'R',
   });
+
+  static Future<void> _openUrl(String url) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('cmd', ['/c', 'start', '', url]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [url]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [url]);
+      }
+    } catch (_) {}
+  }
 
   @override
   Component build(BuildContext context) {
@@ -28,9 +41,20 @@ class FooterBar extends StatelessComponent {
                 style: statusStyle ?? LawnchairTheme.statusInfo,
               ),
               const Spacer(),
-              const Text(
-                'Astra Lawnchair v0.1.0',
-                style: LawnchairTheme.footerDesc,
+              Row(
+                children: [
+                  const Text(
+                    'Joshh3ro | v0.1.0 | ',
+                    style: LawnchairTheme.footerDesc,
+                  ),
+                  GestureDetector(
+                    onTap: () => _openUrl('https://github.com/Joshh3ro/astra-lawnchair'),
+                    child: const Text(
+                      '(GitHub)',
+                      style: LawnchairTheme.footerLink,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

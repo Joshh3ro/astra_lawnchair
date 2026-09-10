@@ -71,10 +71,14 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
 
-        // Verify MainScreen is now loaded with discovered account
+        // Verify MainScreen is now loaded with top-level menu
         expect(tester.terminalState, containsText('Astra Lawnchair'));
-        expect(tester.terminalState, containsText('AccountBravo'));
+        expect(tester.terminalState, containsText('Accounts (1 accounts)'));
         expect(tester.terminalState, containsText('SELECTED (queued to launch)'));
+
+        // Enter Accounts menu to verify discovered account
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('AccountBravo'));
       });
     });
   });
