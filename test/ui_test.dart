@@ -59,7 +59,7 @@ void main() {
         expect(tester.terminalState, containsText('Space'));
         expect(tester.terminalState, containsText('select'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.0'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.1'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -236,6 +236,67 @@ void main() {
         await tester.sendKey(LogicalKey.arrowDown); // Back
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+      });
+    });
+
+    test('MainScreen displays running bot badge and terminates via K hotkey', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+      );
+
+      const runningAccount = Account(
+        name: 'ActiveBotAccount',
+        folderPath: 'C:\\bots\\ActiveBotAccount',
+        exePath: 'C:\\bots\\ActiveBotAccount\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP', 'Farming'],
+      );
+
+      // Pre-register a running bot session (mock PID 95555)
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: runningAccount, configName: 'PvP'),
+        95555,
+      );
+
+      await testNocterm('running bot badge and kill test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: [runningAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [1]'));
+
+        // Verify running badge is visible in Accounts list
+        expect(tester.terminalState, containsText('RUNNING'));
+        expect(tester.terminalState, containsText('95555'));
+
+        // Right pane displays running bot status inspector
+        expect(tester.terminalState, containsText('RUNNING BOT STATUS [PID: 95555]'));
+        expect(tester.terminalState, containsText('Config Name:'));
+        expect(tester.terminalState, containsText('PvP'));
+
+        // Press 'K' to terminate the running bot
+        await tester.sendKey(LogicalKey.keyK);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Verify status message updates and session is terminated
+        expect(tester.terminalState, containsText('Terminated bot for "ActiveBotAccount"'));
+        expect(processTracker.isRunning('ActiveBotAccount'), isFalse);
       });
     });
   });

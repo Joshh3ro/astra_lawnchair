@@ -71,4 +71,13 @@ class LawnchairTheme {
   static const TextStyle statusInfo = TextStyle(
     color: Colors.yellow,
   );
+
+  static const TextStyle statusRunning = TextStyle(
+    color: Colors.green,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle badgeRunning = TextStyle(
+    color: Colors.green,
+  );
 }

@@ -3,6 +3,7 @@ import '../models/account.dart';
 import '../models/app_config.dart';
 import '../services/config_service.dart';
 import '../services/launcher_service.dart';
+import '../services/process_tracker_service.dart';
 import '../services/scanner_service.dart';
 import 'screens/main_screen.dart';
 import 'screens/setup_screen.dart';
@@ -12,12 +13,14 @@ class AstraLawnchairApp extends StatefulComponent {
   final ConfigService? configService;
   final ScannerService? scannerService;
   final LauncherService? launcherService;
+  final ProcessTrackerService? processTrackerService;
 
   const AstraLawnchairApp({
     super.key,
     this.configService,
     this.scannerService,
     this.launcherService,
+    this.processTrackerService,
   });
 
   @override
@@ -28,6 +31,7 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
   late final ConfigService _configService;
   late final ScannerService _scannerService;
   late final LauncherService _launcherService;
+  late final ProcessTrackerService _processTrackerService;
 
   bool _isLoading = true;
   AppConfig? _config;
@@ -39,6 +43,8 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
     _configService = component.configService ?? ConfigService();
     _scannerService = component.scannerService ?? ScannerService();
     _launcherService = component.launcherService ?? const LauncherService();
+    _processTrackerService = component.processTrackerService ??
+        ProcessTrackerService(baseDir: _configService.baseDir);
 
     _initialize();
   }
@@ -99,6 +105,7 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
       configService: _configService,
       scannerService: _scannerService,
       launcherService: _launcherService,
+      processTrackerService: _processTrackerService,
       initialAccounts: _accounts,
     );
   }

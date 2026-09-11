@@ -3,8 +3,10 @@ import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
 import '../../models/app_config.dart';
 import '../../models/launch_target.dart';
+import '../../models/running_session.dart';
 import '../../services/config_service.dart';
 import '../../services/launcher_service.dart';
+import '../../services/process_tracker_service.dart';
 import '../../services/scanner_service.dart';
 import '../theme.dart';
 import '../widgets/footer_bar.dart';
@@ -40,6 +42,7 @@ class MainScreen extends StatefulComponent {
   final ConfigService? configService;
   final ScannerService scannerService;
   final LauncherService launcherService;
+  final ProcessTrackerService? processTrackerService;
   final List<Account> initialAccounts;
 
   const MainScreen({
@@ -48,6 +51,7 @@ class MainScreen extends StatefulComponent {
     this.configService,
     required this.scannerService,
     required this.launcherService,
+    this.processTrackerService,
     required this.initialAccounts,
   });
 
@@ -75,6 +79,8 @@ class _MainScreenState extends State<MainScreen> {
   TextStyle? _statusStyle;
   bool _isBusy = false;
 
+  late final ProcessTrackerService _processTracker;
+
   static const List<int> _staggerPresets = [200, 300, 400, 500, 750, 1000];
 
   @override
@@ -82,6 +88,18 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _currentConfig = component.config;
     _accounts = List.from(component.initialAccounts);
+    _processTracker = component.processTrackerService ??
+        ProcessTrackerService(
+          baseDir: component.configService?.baseDir ?? ConfigService.defaultStorageDir(),
+        );
+    _initProcessTracker();
+  }
+
+  Future<void> _initProcessTracker() async {
+    await _processTracker.initAndPrune();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -316,6 +334,7 @@ class _MainScreenState extends State<MainScreen> {
 
     try {
       final updatedAccounts = await component.scannerService.scanAndCache(_currentConfig.rootPath);
+      await _processTracker.pruneStaleSessions();
       setState(() {
         _accounts = updatedAccounts;
         if (_focusedAccountIndex >= _accounts.length) {
@@ -376,6 +395,13 @@ class _MainScreenState extends State<MainScreen> {
         },
       );
 
+      // Register successfully launched PIDs with tracker
+      for (final res in results) {
+        if (res.success && res.pid != null) {
+          await _processTracker.registerLaunch(res.target, res.pid!);
+        }
+      }
+
       final successCount = results.where((r) => r.success).length;
       final failCount = results.where((r) => !r.success).length;
 
@@ -394,6 +420,45 @@ class _MainScreenState extends State<MainScreen> {
         _setStatus('Launch process failed: $e', LawnchairTheme.statusError);
       });
     }
+  }
+
+  Future<void> _killFocusedBot() async {
+    if (_isBusy) return;
+
+    String? targetAccountName;
+    if (_navLevel == NavigationLevel.accounts) {
+      if (_accounts.isNotEmpty && _focusedAccountIndex < _accounts.length) {
+        targetAccountName = _accounts[_focusedAccountIndex].name;
+      }
+    } else if (_navLevel == NavigationLevel.configs) {
+      targetAccountName = _activeAccount?.name;
+    }
+
+    if (targetAccountName == null) {
+      _setStatus('No account focused to terminate.', LawnchairTheme.statusInfo);
+      return;
+    }
+
+    final session = _processTracker.getSession(targetAccountName);
+    if (session == null) {
+      _setStatus('Account "$targetAccountName" is not currently running.', LawnchairTheme.statusInfo);
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _setStatus('Terminating bot for "$targetAccountName" (PID: ${session.pid})...', LawnchairTheme.statusInfo);
+    });
+
+    final killed = await _processTracker.killSession(targetAccountName);
+    setState(() {
+      _isBusy = false;
+      if (killed) {
+        _setStatus('Terminated bot for "$targetAccountName" (PID: ${session.pid}).', LawnchairTheme.statusSuccess);
+      } else {
+        _setStatus('Process ${session.pid} already exited or could not be terminated.', LawnchairTheme.statusError);
+      }
+    });
   }
 
   bool _handleKeyEvent(KeyboardEvent event) {
@@ -415,6 +480,12 @@ class _MainScreenState extends State<MainScreen> {
         (event.character?.toUpperCase() == component.config.runHotkey.toUpperCase() ||
             event.logicalKey == LogicalKey.keyR)) {
       _runSelected();
+      return true;
+    }
+
+    // K: Kill focused running bot
+    if (event.character?.toLowerCase() == 'k' || event.logicalKey == LogicalKey.keyK) {
+      _killFocusedBot();
       return true;
     }
 
@@ -628,9 +699,14 @@ class _MainScreenState extends State<MainScreen> {
             final isSelected = queuedCount > 0;
             final subtitle = queuedCount > 0 ? '($queuedCount queued)' : '(${account.configs.length} configs)';
 
+            final session = _processTracker.getSession(account.name);
+            final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
+
             return ListItemRow(
               title: account.name,
               subtitle: subtitle,
+              badge: badge,
+              badgeStyle: LawnchairTheme.statusRunning,
               isFocused: isFocused,
               isSelected: isSelected,
               showCheckbox: true,
@@ -658,6 +734,8 @@ class _MainScreenState extends State<MainScreen> {
           );
         }
 
+        final activeSession = account != null ? _processTracker.getSession(account.name) : null;
+
         return ListView.builder(
           itemCount: configs.length,
           itemBuilder: (context, index) {
@@ -665,8 +743,15 @@ class _MainScreenState extends State<MainScreen> {
             final isFocused = index == _focusedConfigIndex;
             final isSelected = account != null && _isConfigSelected(account, configName);
 
+            final isRunningThisConfig = activeSession != null && activeSession.configName == configName;
+            final badge = isRunningThisConfig
+                ? '[RUNNING: ${activeSession.formattedUptime} | PID: ${activeSession.pid}]'
+                : null;
+
             return ListItemRow(
               title: configName,
+              badge: badge,
+              badgeStyle: LawnchairTheme.statusRunning,
               isFocused: isFocused,
               isSelected: isSelected,
               showCheckbox: true,
@@ -782,6 +867,22 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
+    // Check if currently focused account/config has an active running bot
+    RunningSession? activeSession;
+    if (_navLevel == NavigationLevel.accounts && _accounts.isNotEmpty && _focusedAccountIndex < _accounts.length) {
+      activeSession = _processTracker.getSession(_accounts[_focusedAccountIndex].name);
+    } else if (_navLevel == NavigationLevel.configs && _activeAccount != null) {
+      activeSession = _processTracker.getSession(_activeAccount!.name);
+    }
+
+    if (activeSession != null) {
+      return PaneBox(
+        title: 'RUNNING BOT STATUS [PID: ${activeSession.pid}]',
+        isFocused: false,
+        child: _buildRunningSessionContent(activeSession),
+      );
+    }
+
     // Default right pane: Launch Queue
     return PaneBox(
       title: 'SELECTED (queued to launch) [${_selectedQueue.length}]',
@@ -805,9 +906,14 @@ class _MainScreenState extends State<MainScreen> {
       itemCount: _selectedQueue.length,
       itemBuilder: (context, index) {
         final target = _selectedQueue[index];
+        final session = _processTracker.getSession(target.account.name);
+        final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
+
         return ListItemRow(
           title: target.account.name,
           subtitle: '— "${target.configName}"',
+          badge: badge,
+          badgeStyle: LawnchairTheme.statusRunning,
           isFocused: false,
           isSelected: true,
           showCheckbox: true,
@@ -839,6 +945,7 @@ class _MainScreenState extends State<MainScreen> {
           const Text('Global Actions:', style: LawnchairTheme.titleStyle),
           const SizedBox(height: 1),
           _hotkeyRow('R', 'Launch all queued accounts sequentially'),
+          _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
           _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
           _hotkeyRow('Q', 'Quit Astra Lawnchair from anywhere'),
           _hotkeyRow('Mouse Tap', 'Click any row to focus, open, or toggle'),
@@ -896,6 +1003,37 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           Text('$label:', style: LawnchairTheme.footerKey),
           Text(value, style: LawnchairTheme.itemNormal),
+        ],
+      ),
+    );
+  }
+
+  Component _buildRunningSessionContent(RunningSession session) {
+    return Container(
+      padding: const EdgeInsets.all(1),
+      child: ListView(
+        children: [
+          const Text('Active Process Information:', style: LawnchairTheme.titleStyle),
+          const SizedBox(height: 1),
+          _settingRow('Account', session.accountName),
+          _settingRow('Config Name', session.configName),
+          _settingRow('Process ID (PID)', '${session.pid}'),
+          _settingRow('Uptime', session.formattedUptime),
+          _settingRow('Started At', session.startTime.toLocal().toString().split('.').first),
+          const SizedBox(height: 1),
+          const Divider(),
+          const SizedBox(height: 1),
+          const Text(
+            'Process Management:',
+            style: LawnchairTheme.titleStyle,
+          ),
+          const SizedBox(height: 1),
+          _hotkeyRow('K', 'Terminate this bot process (kill tree)'),
+          const SizedBox(height: 1),
+          const Text(
+            'Press K while focused on this account to stop the bot and free resources.',
+            style: LawnchairTheme.footerDesc,
+          ),
         ],
       ),
     );

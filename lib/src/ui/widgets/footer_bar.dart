@@ -44,7 +44,7 @@ class FooterBar extends StatelessComponent {
               Row(
                 children: [
                   const Text(
-                    'Joshh3ro | v0.1.0 | ',
+                    'Joshh3ro | v0.1.1 | ',
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(
@@ -71,6 +71,8 @@ class FooterBar extends StatelessComponent {
               _keyItem('Backspace', 'back'),
               const SizedBox(width: 2),
               _keyItem(runHotkey, 'run'),
+              const SizedBox(width: 2),
+              _keyItem('K', 'kill'),
               const SizedBox(width: 2),
               _keyItem('Shift+R', 'refresh'),
               const SizedBox(width: 2),

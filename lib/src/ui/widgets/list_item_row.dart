@@ -8,6 +8,8 @@ class ListItemRow extends StatelessComponent {
   final bool isFocused;
   final bool isSelected;
   final bool showCheckbox;
+  final String? badge;
+  final TextStyle? badgeStyle;
   final VoidCallback? onTap;
 
   const ListItemRow({
@@ -15,6 +17,8 @@ class ListItemRow extends StatelessComponent {
     required this.title,
     this.subtitle,
     this.subtitleBelow = false,
+    this.badge,
+    this.badgeStyle,
     this.isFocused = false,
     this.isSelected = false,
     this.showCheckbox = false,
@@ -45,15 +49,27 @@ class ListItemRow extends StatelessComponent {
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('$focusPrefix$checkPrefix$title', style: textStyle),
+          Row(
+            children: [
+              Text('$focusPrefix$checkPrefix$title', style: textStyle),
+              if (badge != null) ...[
+                const SizedBox(width: 1),
+                Text(badge!, style: isFocused ? textStyle : (badgeStyle ?? LawnchairTheme.badgeRunning)),
+              ],
+            ],
+          ),
           Text('    $subtitle', style: descStyle),
         ],
       );
     } else {
-      final displayText = '$focusPrefix$checkPrefix$title${subtitle != null ? ' $subtitle' : ''}';
-      content = Text(
-        displayText,
-        style: textStyle,
+      content = Row(
+        children: [
+          Text('$focusPrefix$checkPrefix$title${subtitle != null ? ' $subtitle' : ''}', style: textStyle),
+          if (badge != null) ...[
+            const SizedBox(width: 1),
+            Text(badge!, style: isFocused ? textStyle : (badgeStyle ?? LawnchairTheme.badgeRunning)),
+          ],
+        ],
       );
     }
 
