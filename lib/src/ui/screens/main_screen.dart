@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
@@ -8,15 +9,19 @@ import '../../services/config_service.dart';
 import '../../services/launcher_service.dart';
 import '../../services/process_tracker_service.dart';
 import '../../services/scanner_service.dart';
+import '../../services/stat_tracker_service.dart';
+import '../../utils/number_formatter.dart';
+import '../../utils/obfuscator.dart';
 import '../theme.dart';
 import '../widgets/footer_bar.dart';
 import '../widgets/list_item_row.dart';
 import '../widgets/pane_box.dart';
 
-enum NavigationLevel { topMenu, accounts, configs, settings, editingRootPath }
+enum NavigationLevel { topMenu, accounts, configs, stats, settings, editingRootPath }
 
 enum TopMenuItem {
   accounts('Accounts', 'Manage accounts and queue bots'),
+  stats('Stats', 'Live account telemetry, currency rates & logs'),
   hotkeys('Hotkeys', 'Keyboard shortcuts & navigation'),
   settings('Settings', 'App preferences & launch parameters'),
   quit('Quit', 'Exit Astra Lawnchair');
@@ -30,6 +35,7 @@ enum SettingsItem {
   client('Client Parameter', 'Toggle between Unity and Flash client mode'),
   stagger('Launch Stagger Delay', 'Pause duration between bot launches'),
   rootPath('Root Folder Path', 'Base directory containing AstraBot accounts'),
+  obfuscate('Obfuscate / Streamer Mode', 'Mask account names & IP addresses for screenshots'),
   back('[< Back to Top Menu]', 'Return to top-level menu');
 
   final String label;
@@ -43,6 +49,7 @@ class MainScreen extends StatefulComponent {
   final ScannerService scannerService;
   final LauncherService launcherService;
   final ProcessTrackerService? processTrackerService;
+  final StatTrackerService? statTrackerService;
   final List<Account> initialAccounts;
 
   const MainScreen({
@@ -52,6 +59,7 @@ class MainScreen extends StatefulComponent {
     required this.scannerService,
     required this.launcherService,
     this.processTrackerService,
+    this.statTrackerService,
     required this.initialAccounts,
   });
 
@@ -71,6 +79,7 @@ class _MainScreenState extends State<MainScreen> {
   int _focusedAccountIndex = 0;
   int _focusedConfigIndex = 0;
   int _focusedSettingsIndex = 0;
+  int _focusedStatsAccountIndex = 0;
 
   final _rootPathController = TextEditingController();
   String _settingsErrorMessage = '';
@@ -80,6 +89,10 @@ class _MainScreenState extends State<MainScreen> {
   bool _isBusy = false;
 
   late final ProcessTrackerService _processTracker;
+  late final StatTrackerService _statTracker;
+  Timer? _statsPollTimer;
+
+  bool _isObfuscated = false;
 
   static const List<int> _staggerPresets = [200, 300, 400, 500, 750, 1000];
 
@@ -87,12 +100,30 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _currentConfig = component.config;
+    _isObfuscated = _currentConfig.obfuscateNames;
     _accounts = List.from(component.initialAccounts);
     _processTracker = component.processTrackerService ??
         ProcessTrackerService(
           baseDir: component.configService?.baseDir ?? ConfigService.defaultStorageDir(),
         );
+    _statTracker = component.statTrackerService ?? StatTrackerService();
     _initProcessTracker();
+    _startStatsPolling();
+  }
+
+  void _toggleObfuscation() async {
+    final nextState = !_isObfuscated;
+    setState(() {
+      _isObfuscated = nextState;
+    });
+    final updated = _currentConfig.copyWith(obfuscateNames: nextState);
+    await _persistConfig(updated);
+    _setStatus(
+      nextState
+          ? 'Obfuscation: ENABLED (Account names & IP addresses masked).'
+          : 'Obfuscation: DISABLED (Original names & IPs visible).',
+      nextState ? LawnchairTheme.statusRunning : LawnchairTheme.statusInfo,
+    );
   }
 
   Future<void> _initProcessTracker() async {
@@ -102,8 +133,41 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _startStatsPolling() {
+    _pollStats();
+    _statsPollTimer = Timer.periodic(const Duration(milliseconds: 1800), (_) {
+      _pollStats();
+    });
+  }
+
+  int _pollCount = 0;
+
+  Future<void> _pollStats() async {
+    if (!mounted || _accounts.isEmpty) return;
+
+    _pollCount++;
+    // Periodically verify OS process liveness every ~5 poll cycles (approx 9 seconds)
+    if (_pollCount % 5 == 0) {
+      await _processTracker.pruneStaleSessions();
+    }
+
+    // Check stats for all accounts (especially running ones)
+    for (final acc in _accounts) {
+      final session = _processTracker.getSession(acc.name);
+      final updatedStats = await _statTracker.updateAccount(acc, session: session);
+      if (session != null) {
+        await _processTracker.updateSessionStats(acc.name, updatedStats.toJson());
+      }
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
+    _statsPollTimer?.cancel();
     _rootPathController.dispose();
     super.dispose();
   }
@@ -131,6 +195,11 @@ class _MainScreenState extends State<MainScreen> {
         case NavigationLevel.configs:
           if (_focusedConfigIndex > 0) {
             _focusedConfigIndex--;
+          }
+          break;
+        case NavigationLevel.stats:
+          if (_focusedStatsAccountIndex > 0) {
+            _focusedStatsAccountIndex--;
           }
           break;
         case NavigationLevel.settings:
@@ -163,6 +232,11 @@ class _MainScreenState extends State<MainScreen> {
             _focusedConfigIndex++;
           }
           break;
+        case NavigationLevel.stats:
+          if (_focusedStatsAccountIndex < _accounts.length - 1) {
+            _focusedStatsAccountIndex++;
+          }
+          break;
         case NavigationLevel.settings:
           if (_focusedSettingsIndex < SettingsItem.values.length - 1) {
             _focusedSettingsIndex++;
@@ -182,6 +256,14 @@ class _MainScreenState extends State<MainScreen> {
           _setStatus('Accounts Menu: Press Enter to view configs, Backspace to return to Top Menu.');
         });
         break;
+      case TopMenuItem.stats:
+        setState(() {
+          _navLevel = NavigationLevel.stats;
+          _focusedStatsAccountIndex = 0;
+          _pollStats();
+          _setStatus('Account Stats: Press ↑/↓ to browse accounts, Backspace to return to Top Menu.');
+        });
+        break;
       case TopMenuItem.hotkeys:
         _setStatus('Viewing Hotkeys reference in right panel.');
         break;
@@ -193,7 +275,7 @@ class _MainScreenState extends State<MainScreen> {
         });
         break;
       case TopMenuItem.quit:
-        exit(0);
+        shutdownApp();
     }
   }
 
@@ -216,7 +298,9 @@ class _MainScreenState extends State<MainScreen> {
         _navLevel = NavigationLevel.accounts;
         _activeAccount = null;
         _setStatus('Returned to Accounts list.');
-      } else if (_navLevel == NavigationLevel.accounts || _navLevel == NavigationLevel.settings) {
+      } else if (_navLevel == NavigationLevel.accounts ||
+          _navLevel == NavigationLevel.stats ||
+          _navLevel == NavigationLevel.settings) {
         _navLevel = NavigationLevel.topMenu;
         _setStatus('Returned to Top Menu.');
       }
@@ -300,6 +384,9 @@ class _MainScreenState extends State<MainScreen> {
         break;
       case SettingsItem.rootPath:
         _startEditingRootPath();
+        break;
+      case SettingsItem.obfuscate:
+        _toggleObfuscation();
         break;
       case SettingsItem.back:
         _popNavigation();
@@ -395,9 +482,10 @@ class _MainScreenState extends State<MainScreen> {
         },
       );
 
-      // Register successfully launched PIDs with tracker
+      // Register successfully launched PIDs with tracker and reset session stats
       for (final res in results) {
         if (res.success && res.pid != null) {
+          _statTracker.resetAccount(res.target.account.name);
           await _processTracker.registerLaunch(res.target, res.pid!);
         }
       }
@@ -472,7 +560,7 @@ class _MainScreenState extends State<MainScreen> {
 
     // Q: Quit
     if (event.character?.toLowerCase() == 'q') {
-      exit(0);
+      shutdownApp();
     }
 
     // R (without Shift): Run
@@ -486,6 +574,13 @@ class _MainScreenState extends State<MainScreen> {
     // K: Kill focused running bot
     if (event.character?.toLowerCase() == 'k' || event.logicalKey == LogicalKey.keyK) {
       _killFocusedBot();
+      return true;
+    }
+
+    // O: Toggle Obfuscate / Streamer Mode (unless typing in text field)
+    if (_navLevel != NavigationLevel.editingRootPath &&
+        (event.character?.toLowerCase() == 'o' || event.logicalKey == LogicalKey.keyO)) {
+      _toggleObfuscation();
       return true;
     }
 
@@ -516,6 +611,11 @@ class _MainScreenState extends State<MainScreen> {
             final configName = account.configs[_focusedConfigIndex];
             _toggleConfigSelection(account, configName);
           }
+          break;
+        case NavigationLevel.stats:
+          // In stats view, enter or click can trigger immediate refresh of focused account
+          _pollStats();
+          _setStatus('Refreshed stats for active account.');
           break;
         case NavigationLevel.settings:
           _handleSettingsAction(SettingsItem.values[_focusedSettingsIndex]);
@@ -567,7 +667,18 @@ class _MainScreenState extends State<MainScreen> {
         leftPaneTitle = 'MENU: Accounts [${_accounts.length}]';
         break;
       case NavigationLevel.configs:
-        leftPaneTitle = 'MENU: ${_activeAccount?.name ?? ""} (${_activeAccount?.configs.length ?? 0} configs)';
+        final accountIndex = _activeAccount != null ? _accounts.indexWhere((a) => a.name == _activeAccount!.name) : -1;
+        final activeName = _activeAccount != null
+            ? Obfuscator.obfuscateAccountName(
+                _activeAccount!.name,
+                index: accountIndex >= 0 ? accountIndex : null,
+                enabled: _isObfuscated,
+              )
+            : '';
+        leftPaneTitle = 'MENU: $activeName (${_activeAccount?.configs.length ?? 0} configs)';
+        break;
+      case NavigationLevel.stats:
+        leftPaneTitle = 'TELEMETRY & STATS [${_accounts.length} Accounts]';
         break;
       case NavigationLevel.settings:
         leftPaneTitle = 'MENU: Settings';
@@ -593,8 +704,14 @@ class _MainScreenState extends State<MainScreen> {
                   style: LawnchairTheme.titleStyle,
                 ),
                 const SizedBox(width: 2),
+                if (_isObfuscated) ...[
+                  const Text('[STREAMER MODE]', style: LawnchairTheme.statRate),
+                  const SizedBox(width: 2),
+                ],
                 Text(
-                  'Root: ${_currentConfig.rootPath}',
+                  _currentConfig.rootPath.length > 35
+                      ? 'Root: ...${_currentConfig.rootPath.substring(_currentConfig.rootPath.length - 32)}'
+                      : 'Root: ${_currentConfig.rootPath}',
                   style: LawnchairTheme.footerDesc,
                 ),
                 const Spacer(),
@@ -632,6 +749,7 @@ class _MainScreenState extends State<MainScreen> {
             statusMessage: _statusMessage,
             statusStyle: _statusStyle,
             runHotkey: _currentConfig.runHotkey,
+            isObfuscated: _isObfuscated,
           ),
         ],
       ),
@@ -702,8 +820,14 @@ class _MainScreenState extends State<MainScreen> {
             final session = _processTracker.getSession(account.name);
             final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
 
+            final displayName = Obfuscator.obfuscateAccountName(
+              account.name,
+              index: index,
+              enabled: _isObfuscated,
+            );
+
             return ListItemRow(
-              title: account.name,
+              title: displayName,
               subtitle: subtitle,
               badge: badge,
               badgeStyle: LawnchairTheme.statusRunning,
@@ -767,6 +891,66 @@ class _MainScreenState extends State<MainScreen> {
           },
         );
 
+      case NavigationLevel.stats:
+        if (_accounts.isEmpty) {
+          return const Center(
+            child: Text(
+              'No account folders found.\nPress Backspace to go back.',
+              style: LawnchairTheme.statusInfo,
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: _accounts.length,
+          itemBuilder: (context, index) {
+            final account = _accounts[index];
+            final isFocused = index == _focusedStatsAccountIndex;
+            final stats = _statTracker.getStats(account.name);
+            final session = _processTracker.getSession(account.name);
+
+            final isRunning = session != null;
+            final badge = isRunning
+                ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]'
+                : '[STOPPED]';
+            final badgeStyle = isRunning
+                ? LawnchairTheme.statusRunning
+                : LawnchairTheme.footerDesc;
+
+            String subtitle;
+            if (stats != null) {
+              final uriFormatted = NumberFormatter.formatNumber(stats.uridium);
+              final uriRate = NumberFormatter.formatRate(stats.uridiumPerHour);
+              final deathsFormatted = NumberFormatter.formatNumber(stats.deathCount);
+              subtitle = 'URI: +$uriFormatted (+$uriRate/h) | Deaths: $deathsFormatted | ${stats.currentMap}';
+            } else {
+              subtitle = 'No telemetry data loaded yet';
+            }
+
+            final displayName = Obfuscator.obfuscateAccountName(
+              account.name,
+              index: index,
+              enabled: _isObfuscated,
+            );
+
+            return ListItemRow(
+              title: displayName,
+              subtitle: subtitle,
+              subtitleBelow: true,
+              badge: badge,
+              badgeStyle: badgeStyle,
+              isFocused: isFocused,
+              showCheckbox: false,
+              onTap: () {
+                setState(() {
+                  _focusedStatsAccountIndex = index;
+                });
+              },
+            );
+          },
+        );
+
       case NavigationLevel.settings:
         return ListView.builder(
           itemCount: SettingsItem.values.length,
@@ -785,16 +969,21 @@ class _MainScreenState extends State<MainScreen> {
               case SettingsItem.rootPath:
                 subtitle = _currentConfig.rootPath;
                 break;
+              case SettingsItem.obfuscate:
+                subtitle = _isObfuscated
+                    ? 'Active: ON (Account names & IPs masked, press Space/Enter to toggle)'
+                    : 'Active: OFF (Names & IPs visible, press Space/Enter to toggle)';
+                break;
               case SettingsItem.back:
                 subtitle = 'Return to top-level menu';
                 break;
             }
 
             return Padding(
-              key: ValueKey('setting_pad_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}'),
+              key: ValueKey('setting_pad_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_$_isObfuscated'),
               padding: const EdgeInsets.only(bottom: 1),
               child: ListItemRow(
-                key: ValueKey('setting_row_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}'),
+                key: ValueKey('setting_row_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_$_isObfuscated'),
                 title: item.label,
                 subtitle: subtitle,
                 subtitleBelow: true,
@@ -858,7 +1047,40 @@ class _MainScreenState extends State<MainScreen> {
           isFocused: false,
           child: _buildSettingsContent(),
         );
+      } else if (activeItem == TopMenuItem.stats) {
+        final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
+            ? _accounts[_focusedStatsAccountIndex]
+            : (_accounts.isNotEmpty ? _accounts.first : null);
+        final accIndex = focusedAccount != null ? _accounts.indexWhere((a) => a.name == focusedAccount.name) : -1;
+        final titleName = focusedAccount != null
+            ? Obfuscator.obfuscateAccountName(
+                focusedAccount.name,
+                index: accIndex >= 0 ? accIndex : null,
+                enabled: _isObfuscated,
+              )
+            : '';
+        return PaneBox(
+          title: focusedAccount != null ? 'ACCOUNT STATS: $titleName' : 'ACCOUNT STATS',
+          isFocused: false,
+          child: _buildAccountStatsDetails(focusedAccount),
+        );
       }
+    } else if (_navLevel == NavigationLevel.stats) {
+      final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
+          ? _accounts[_focusedStatsAccountIndex]
+          : null;
+      final titleName = focusedAccount != null
+          ? Obfuscator.obfuscateAccountName(
+              focusedAccount.name,
+              index: _focusedStatsAccountIndex,
+              enabled: _isObfuscated,
+            )
+          : '';
+      return PaneBox(
+        title: focusedAccount != null ? 'ACCOUNT STATS: $titleName' : 'ACCOUNT STATS',
+        isFocused: false,
+        child: _buildAccountStatsDetails(focusedAccount),
+      );
     } else if (_navLevel == NavigationLevel.settings || _navLevel == NavigationLevel.editingRootPath) {
       return PaneBox(
         title: 'SETTINGS & CONFIGURATION',
@@ -909,8 +1131,14 @@ class _MainScreenState extends State<MainScreen> {
         final session = _processTracker.getSession(target.account.name);
         final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
 
+        final displayName = Obfuscator.obfuscateAccountName(
+          target.account.name,
+          index: _accounts.indexWhere((a) => a.name == target.account.name),
+          enabled: _isObfuscated,
+        );
+
         return ListItemRow(
-          title: target.account.name,
+          title: displayName,
           subtitle: '— "${target.configName}"',
           badge: badge,
           badgeStyle: LawnchairTheme.statusRunning,
@@ -946,6 +1174,7 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(height: 1),
           _hotkeyRow('R', 'Launch all queued accounts sequentially'),
           _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
+          _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
           _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
           _hotkeyRow('Q', 'Quit Astra Lawnchair from anywhere'),
           _hotkeyRow('Mouse Tap', 'Click any row to focus, open, or toggle'),
@@ -966,6 +1195,7 @@ class _MainScreenState extends State<MainScreen> {
           _settingRow('Launch Stagger', '${_currentConfig.staggerDelayMs} ms'),
           _settingRow('Client Parameter', _currentConfig.clientName),
           _settingRow('Run Hotkey', _currentConfig.runHotkey),
+          _settingRow('Obfuscate Mode', _isObfuscated ? 'Enabled (ON)' : 'Disabled (OFF)'),
           const SizedBox(height: 1),
           const Divider(),
           const SizedBox(height: 1),
@@ -1009,13 +1239,19 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Component _buildRunningSessionContent(RunningSession session) {
+    final accountDisplayName = Obfuscator.obfuscateAccountName(
+      session.accountName,
+      index: _accounts.indexWhere((a) => a.name == session.accountName),
+      enabled: _isObfuscated,
+    );
+
     return Container(
       padding: const EdgeInsets.all(1),
       child: ListView(
         children: [
           const Text('Active Process Information:', style: LawnchairTheme.titleStyle),
           const SizedBox(height: 1),
-          _settingRow('Account', session.accountName),
+          _settingRow('Account', accountDisplayName),
           _settingRow('Config Name', session.configName),
           _settingRow('Process ID (PID)', '${session.pid}'),
           _settingRow('Uptime', session.formattedUptime),
@@ -1036,6 +1272,106 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Component _buildAccountStatsDetails(Account? account) {
+    if (account == null) {
+      return const Center(
+        child: Text(
+          'No account selected for stats.',
+          style: LawnchairTheme.footerDesc,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final stats = _statTracker.getStats(account.name);
+    final session = _processTracker.getSession(account.name);
+
+    final isRunning = session != null;
+    final statusText = isRunning ? 'RUNNING (PID: ${session.pid})' : 'STOPPED';
+    final statusColor = isRunning ? LawnchairTheme.statusRunning : LawnchairTheme.footerDesc;
+
+    final uriFormatted = NumberFormatter.formatNumber(stats?.uridium ?? 0);
+    final credFormatted = NumberFormatter.formatNumber(stats?.credits ?? 0);
+    final xpFormatted = NumberFormatter.formatNumber(stats?.experience ?? 0);
+    final honorFormatted = NumberFormatter.formatNumber(stats?.honor ?? 0);
+
+    final uriRate = NumberFormatter.formatRate(stats?.uridiumPerHour ?? 0.0);
+    final credRate = NumberFormatter.formatRate(stats?.creditsPerHour ?? 0.0);
+    final xpRate = NumberFormatter.formatRate(stats?.experiencePerHour ?? 0.0);
+    final honorRate = NumberFormatter.formatRate(stats?.honorPerHour ?? 0.0);
+
+    final items = stats?.itemsGained ?? {};
+    final maskedProxyIp = Obfuscator.obfuscateIp(stats?.activeProxyIp, enabled: _isObfuscated);
+
+    return Container(
+      padding: const EdgeInsets.all(1),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Section 1: Bot State & Session
+            const Text('Session & Health:', style: LawnchairTheme.statSectionHeader),
+            Row(
+              children: [
+                const SizedBox(width: 16, child: Text('Status:', style: LawnchairTheme.footerKey)),
+                Text(statusText, style: statusColor),
+              ],
+            ),
+            _statRow('Uptime', stats?.formattedUptime ?? (session?.formattedUptime ?? '0s')),
+            _statRow('Current Map', stats?.currentMap ?? 'Unknown'),
+            _statRow('Bot State', stats?.botState ?? (isRunning ? 'Running' : 'Offline')),
+            if (maskedProxyIp != null) _statRow('Proxy IP', maskedProxyIp),
+            if (stats?.lastError != null) ...[
+              Text('Last Warning/Error:', style: LawnchairTheme.statDeathWarning),
+              Text(stats!.lastError!, style: LawnchairTheme.statusError),
+            ],
+            const Divider(),
+
+            // Section 2: Core Currencies & Hourly Rates
+            const Text('Currency Earnings & Hourly Rates:', style: LawnchairTheme.statSectionHeader),
+            _statRow('Uridium', '+$uriFormatted', '+$uriRate/hr'),
+            _statRow('Credits', '+$credFormatted', '+$credRate/hr'),
+            _statRow('Experience', '+$xpFormatted', '+$xpRate/hr'),
+            _statRow('Honor', '+$honorFormatted', '+$honorRate/hr'),
+            const Divider(),
+
+            // Section 3: Survivability & Deaths
+            const Text('Combat & Survivability:', style: LawnchairTheme.statSectionHeader),
+            _statRow('Total Deaths', NumberFormatter.formatNumber(stats?.deathCount ?? 0)),
+            if (stats?.lastKiller != null) _statRow('Last Killer', stats!.lastKiller!),
+            if (stats?.lastDeathMap != null) _statRow('Death Map', stats!.lastDeathMap!),
+            _statRow('Last Death', stats?.formattedTimeSinceLastDeath ?? 'None'),
+            const Divider(),
+
+            // Section 4: Loot & Special Items
+            const Text('Items & Materials Collected:', style: LawnchairTheme.statSectionHeader),
+            if (items.isEmpty)
+              const Text('No special items collected in this session yet.', style: LawnchairTheme.footerDesc)
+            else
+              for (final entry in items.entries)
+                _statRow(entry.key, '+${NumberFormatter.formatNumber(entry.value)}'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _statRow(String label, String value, [String? rate]) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 16,
+          child: Text('$label:', style: LawnchairTheme.footerKey),
+        ),
+        Text(value, style: LawnchairTheme.statValueHighlight),
+        if (rate != null) ...[
+          const SizedBox(width: 2),
+          Text('($rate)', style: LawnchairTheme.statRate),
+        ],
+      ],
     );
   }
 }

@@ -82,6 +82,15 @@ class ProcessTrackerService {
     return session;
   }
 
+  /// Updates the latest known stats snapshot for an active running session
+  Future<void> updateSessionStats(String accountName, Map<String, dynamic> stats) async {
+    final session = _activeSessions[accountName];
+    if (session == null) return;
+
+    _activeSessions[accountName] = session.copyWith(lastStats: stats);
+    await saveSessions();
+  }
+
   /// Checks if a process is still alive in the operating system
   Future<bool> isProcessAlive(int pid) async {
     if (pid <= 0) return false;
