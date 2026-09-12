@@ -12,6 +12,7 @@ void main() {
         staggerDelayMs: 500,
         clientName: 'Unity',
         runHotkey: 'R',
+        obfuscateNames: true,
       );
 
       final json = config.toJson();
@@ -21,6 +22,27 @@ void main() {
       expect(loaded.staggerDelayMs, 500);
       expect(loaded.clientName, 'Unity');
       expect(loaded.runHotkey, 'R');
+      expect(loaded.obfuscateNames, isTrue);
+    });
+
+    test('Obfuscator masks account names and IP addresses correctly', () {
+      Obfuscator.clearCache();
+
+      // Disabled mode returns original values
+      expect(Obfuscator.obfuscateAccountName('AstraBot - Main', enabled: false), 'AstraBot - Main');
+      expect(Obfuscator.obfuscateIp('192.186.186.236', enabled: false), '192.186.186.236');
+
+      // Enabled mode with index
+      expect(Obfuscator.obfuscateAccountName('AstraBot - Main', index: 0, enabled: true), 'Account #1');
+      expect(Obfuscator.obfuscateAccountName('AstraBot - Alt', index: 1, enabled: true), 'Account #2');
+
+      // Consistent lookup from cache
+      expect(Obfuscator.obfuscateAccountName('AstraBot - Main', enabled: true), 'Account #1');
+
+      // IP masking (entire IP masked)
+      expect(Obfuscator.obfuscateIp('192.186.186.236', enabled: true), '***.***.***.***');
+      expect(Obfuscator.obfuscateIp('10.0.0.1:8080', enabled: true), '***.***.***.***:8080');
+      expect(Obfuscator.obfuscateIp(null, enabled: true), isNull);
     });
 
     test('Account and LaunchTarget equality', () {
@@ -186,6 +208,83 @@ void main() {
       expect(results.length, 2);
       expect(results.every((r) => r.success), isTrue);
       expect(progressItems, ['Trinity Trials (1/2)', 'PvP Fast (2/2)']);
+    });
+  });
+
+  group('ProcessTrackerService', () {
+    late Directory tempDir;
+    late ProcessTrackerService processTracker;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('process_tracker_test_');
+      processTracker = ProcessTrackerService(baseDir: tempDir.path);
+    });
+
+    tearDown(() {
+      tempDir.deleteSync(recursive: true);
+    });
+
+    test('registers launch, updates stats, saves to disk and restores on init', () async {
+      const account = Account(
+        name: 'PersistAccount',
+        folderPath: '/fake/folder',
+        exePath: '/fake/folder/AstraBot.exe',
+        datPath: '',
+        configs: ['Config1'],
+      );
+
+      const target = LaunchTarget(account: account, configName: 'Config1');
+
+      // Register with mock PID 96666 (within alive mock test range 90000-99999)
+      await processTracker.registerLaunch(target, 96666);
+      expect(processTracker.isRunning('PersistAccount'), isTrue);
+
+      final stats = const AccountStats(
+        accountName: 'PersistAccount',
+        uridium: 1500,
+        credits: 90000,
+        deathCount: 2,
+        currentMap: '3-1',
+      );
+
+      await processTracker.updateSessionStats('PersistAccount', stats.toJson());
+
+      // Create a brand new instance simulating tool restart
+      final restartedTracker = ProcessTrackerService(baseDir: tempDir.path);
+      await restartedTracker.initAndPrune();
+
+      expect(restartedTracker.isRunning('PersistAccount'), isTrue);
+      final restoredSession = restartedTracker.getSession('PersistAccount');
+      expect(restoredSession, isNotNull);
+      expect(restoredSession!.pid, 96666);
+      expect(restoredSession.lastStats, isNotNull);
+
+      final restoredStats = AccountStats.fromJson(restoredSession.lastStats!);
+      expect(restoredStats.uridium, 1500);
+      expect(restoredStats.credits, 90000);
+      expect(restoredStats.deathCount, 2);
+      expect(restoredStats.currentMap, '3-1');
+    });
+
+    test('prunes dead process sessions on init', () async {
+      const account = Account(
+        name: 'DeadAccount',
+        folderPath: '/fake/folder',
+        exePath: '/fake/folder/AstraBot.exe',
+        datPath: '',
+        configs: ['Config1'],
+      );
+
+      const target = LaunchTarget(account: account, configName: 'Config1');
+
+      // Register with PID 99999999 which is not in OS or mock range
+      await processTracker.registerLaunch(target, 99999999);
+
+      final restartedTracker = ProcessTrackerService(baseDir: tempDir.path);
+      await restartedTracker.initAndPrune();
+
+      // Dead session must be pruned!
+      expect(restartedTracker.isRunning('DeadAccount'), isFalse);
     });
   });
 }

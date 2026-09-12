@@ -6,12 +6,14 @@ class FooterBar extends StatelessComponent {
   final String statusMessage;
   final TextStyle? statusStyle;
   final String runHotkey;
+  final bool isObfuscated;
 
   const FooterBar({
     super.key,
     this.statusMessage = '',
     this.statusStyle,
     this.runHotkey = 'R',
+    this.isObfuscated = false,
   });
 
   static Future<void> _openUrl(String url) async {
@@ -44,7 +46,7 @@ class FooterBar extends StatelessComponent {
               Row(
                 children: [
                   const Text(
-                    'Joshh3ro | v0.1.1 | ',
+                    'Joshh3ro | v0.1.3 | ',
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(
@@ -73,6 +75,8 @@ class FooterBar extends StatelessComponent {
               _keyItem(runHotkey, 'run'),
               const SizedBox(width: 2),
               _keyItem('K', 'kill'),
+              const SizedBox(width: 2),
+              _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
               const SizedBox(width: 2),
               _keyItem('Shift+R', 'refresh'),
               const SizedBox(width: 2),

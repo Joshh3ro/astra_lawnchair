@@ -52,14 +52,17 @@ void main() {
           const FooterBar(
             statusMessage: 'Ready to launch',
             runHotkey: 'R',
+            isObfuscated: false,
           ),
         );
 
         expect(tester.terminalState, containsText('Ready to launch'));
         expect(tester.terminalState, containsText('Space'));
         expect(tester.terminalState, containsText('select'));
+        expect(tester.terminalState, containsText('O'));
+        expect(tester.terminalState, containsText('hide'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.1'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.3'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -112,9 +115,9 @@ void main() {
         // Verify Top-Level Menu is displayed first
         expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
         expect(tester.terminalState, containsText('Accounts (2 accounts)'));
+        expect(tester.terminalState, containsText('Stats'));
         expect(tester.terminalState, containsText('Hotkeys'));
         expect(tester.terminalState, containsText('Settings'));
-        expect(tester.terminalState, containsText('Quit'));
 
         // Press Enter on Accounts to enter accounts list
         await tester.sendKey(LogicalKey.enter);
@@ -202,7 +205,8 @@ void main() {
           ),
         );
 
-        // Move down to Settings in Top Menu (index 2: Accounts -> Hotkeys -> Settings)
+        // Move down to Settings in Top Menu (index 3: Accounts -> Stats -> Hotkeys -> Settings)
+        await tester.sendKey(LogicalKey.arrowDown);
         await tester.sendKey(LogicalKey.arrowDown);
         await tester.sendKey(LogicalKey.arrowDown);
         expect(tester.terminalState, containsText('Settings'));
@@ -233,8 +237,74 @@ void main() {
 
         // Move down to Back and press Enter to return to Top Menu
         await tester.sendKey(LogicalKey.arrowDown); // Root Path
+        await tester.sendKey(LogicalKey.arrowDown); // Obfuscate
         await tester.sendKey(LogicalKey.arrowDown); // Back
         await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+      });
+    });
+
+    test('MainScreen navigates to Stats view and renders telemetry metrics', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final statTracker = StatTrackerService();
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+      );
+
+      final accountDir = Directory('${tempDir.path}\\StatsBotAccount')..createSync();
+      final ingameFile = File('${accountDir.path}\\ingameLogs_2026.txt');
+      await ingameFile.writeAsString('''
+[20:21:07] You received 100 uridium.
+[20:21:13] You received 5000 credits.
+[20:21:45] You received 5 Quantum Prism
+''');
+
+      final statsAccount = Account(
+        name: 'StatsBotAccount',
+        folderPath: accountDir.path,
+        exePath: '${accountDir.path}\\AstraBot.exe',
+        datPath: '',
+        configs: const ['DefaultConfig'],
+      );
+
+      await testNocterm(
+        'stats view navigation and metrics test',
+        size: const Size(80, 30),
+        (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            statTrackerService: statTracker,
+            initialAccounts: [statsAccount],
+          ),
+        );
+
+        // Move down to Stats in Top Menu (index 1: Accounts -> Stats)
+        await tester.sendKey(LogicalKey.arrowDown);
+        expect(tester.terminalState, containsText('Stats'));
+
+        // Enter Stats view
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('TELEMETRY & STATS'));
+        expect(tester.terminalState, containsText('StatsBotAccount'));
+
+        // Right pane displays stat card metrics
+        expect(tester.terminalState, containsText('ACCOUNT STATS: StatsBotAccount'));
+        expect(tester.terminalState, containsText('Uridium:'));
+        expect(tester.terminalState, containsText('+100'));
+        expect(tester.terminalState, containsText('Quantum Prism:'));
+        expect(tester.terminalState, containsText('+5'));
+
+        // Backspace returns to Top Menu
+        await tester.sendKey(LogicalKey.backspace);
         expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
       });
     });
@@ -297,6 +367,149 @@ void main() {
         // Verify status message updates and session is terminated
         expect(tester.terminalState, containsText('Terminated bot for "ActiveBotAccount"'));
         expect(processTracker.isRunning('ActiveBotAccount'), isFalse);
+      });
+    });
+
+    test('Hotkey O toggles Obfuscate / Streamer Mode across views', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+        obfuscateNames: false,
+      );
+
+      const testAccount = Account(
+        name: 'SuperSecretAccount',
+        folderPath: 'C:\\bots\\SuperSecretAccount',
+        exePath: 'C:\\bots\\SuperSecretAccount\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP'],
+      );
+
+      await testNocterm('obfuscation toggle test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            initialAccounts: const [testAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Initially in Top Menu, drill into Accounts
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('SuperSecretAccount'));
+        expect(tester.terminalState, isNot(containsText('[STREAMER MODE]')));
+
+        // Press 'O' to enable Obfuscation
+        await tester.sendKey(LogicalKey.keyO);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Account name should now be masked to Account #1 and [STREAMER MODE] visible
+        expect(tester.terminalState, containsText('[STREAMER MODE]'));
+        expect(tester.terminalState, containsText('Account #1'));
+        expect(tester.terminalState, isNot(containsText('SuperSecretAccount')));
+
+        // Press 'O' again to disable Obfuscation
+        await tester.sendKey(LogicalKey.keyO);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('SuperSecretAccount'));
+        expect(tester.terminalState, isNot(containsText('[STREAMER MODE]')));
+      });
+    });
+
+    test('Running session details and badges remain fully visible when Obfuscation is enabled', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+        obfuscateNames: true, // Obfuscated by default
+      );
+
+      const runningAccount = Account(
+        name: 'PrivateStreamerAccount',
+        folderPath: 'C:\\bots\\PrivateStreamerAccount',
+        exePath: 'C:\\bots\\PrivateStreamerAccount\\AstraBot.exe',
+        datPath: '',
+        configs: ['StealthPvP'],
+      );
+
+      // Register active running session
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: runningAccount, configName: 'StealthPvP'),
+        77889,
+      );
+
+      await testNocterm('running session obfuscation test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: const [runningAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [1]'));
+
+        // Account name is obfuscated
+        expect(tester.terminalState, containsText('Account #1'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
+
+        // Running session badge is fully visible in left pane
+        expect(tester.terminalState, containsText('RUNNING:'));
+        expect(tester.terminalState, containsText('77889'));
+
+        // Right pane displays running bot status with masked account name but visible session metrics
+        expect(tester.terminalState, containsText('RUNNING BOT STATUS [PID: 77889]'));
+        expect(tester.terminalState, containsText('Active Process Information:'));
+        expect(tester.terminalState, containsText('Config Name:'));
+        expect(tester.terminalState, containsText('StealthPvP'));
+        expect(tester.terminalState, containsText('Process ID (PID):'));
+        expect(tester.terminalState, containsText('77889'));
+        expect(tester.terminalState, containsText('Uptime:'));
+
+        // 2. Drill into configs
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Account #1 (1 configs)'));
+        expect(tester.terminalState, containsText('StealthPvP'));
+        expect(tester.terminalState, containsText('RUNNING:'));
+        expect(tester.terminalState, containsText('77889'));
+
+        // Pop back to Accounts, then Top Menu
+        await tester.sendKey(LogicalKey.backspace);
+        await tester.sendKey(LogicalKey.backspace);
+
+        // 3. Move to Stats view
+        await tester.sendKey(LogicalKey.arrowDown); // index 1: Stats
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Stats left pane badge has RUNNING and PID
+        expect(tester.terminalState, containsText('TELEMETRY & STATS'));
+        expect(tester.terminalState, containsText('Account #1'));
+        expect(tester.terminalState, containsText('RUNNING:'));
+        expect(tester.terminalState, containsText('77889'));
+
+        // Stats right pane details has RUNNING status and PID
+        expect(tester.terminalState, containsText('ACCOUNT STATS: Account #1'));
+        expect(tester.terminalState, containsText('RUNNING (PID: 77889)'));
       });
     });
   });

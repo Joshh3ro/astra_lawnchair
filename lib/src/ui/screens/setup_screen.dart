@@ -119,7 +119,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   }
                   return true;
                 } else if (event.character?.toLowerCase() == 'q' && _pathController.text.isEmpty) {
-                  exit(0);
+                  shutdownApp();
                 }
                 return false;
               },

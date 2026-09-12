@@ -80,4 +80,25 @@ class LawnchairTheme {
   static const TextStyle badgeRunning = TextStyle(
     color: Colors.green,
   );
+
+  // Statistics theme styles
+  static const TextStyle statValueHighlight = TextStyle(
+    color: Colors.cyan,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle statRate = TextStyle(
+    color: Colors.green,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle statDeathWarning = TextStyle(
+    color: Colors.red,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle statSectionHeader = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
 }

@@ -3,12 +3,14 @@ class RunningSession {
   final String configName;
   final int pid;
   final DateTime startTime;
+  final Map<String, dynamic>? lastStats;
 
   const RunningSession({
     required this.accountName,
     required this.configName,
     required this.pid,
     required this.startTime,
+    this.lastStats,
   });
 
   Duration get uptime => DateTime.now().difference(startTime);
@@ -32,6 +34,7 @@ class RunningSession {
         'configName': configName,
         'pid': pid,
         'startTime': startTime.toIso8601String(),
+        if (lastStats != null) 'lastStats': lastStats,
       };
 
   factory RunningSession.fromJson(Map<String, dynamic> json) {
@@ -42,6 +45,7 @@ class RunningSession {
       startTime: json['startTime'] != null
           ? DateTime.tryParse(json['startTime'] as String) ?? DateTime.now()
           : DateTime.now(),
+      lastStats: json['lastStats'] as Map<String, dynamic>?,
     );
   }
 
@@ -50,12 +54,14 @@ class RunningSession {
     String? configName,
     int? pid,
     DateTime? startTime,
+    Map<String, dynamic>? lastStats,
   }) {
     return RunningSession(
       accountName: accountName ?? this.accountName,
       configName: configName ?? this.configName,
       pid: pid ?? this.pid,
       startTime: startTime ?? this.startTime,
+      lastStats: lastStats ?? this.lastStats,
     );
   }
 
