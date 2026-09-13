@@ -13,6 +13,7 @@ void main() {
         clientName: 'Unity',
         runHotkey: 'R',
         obfuscateNames: true,
+        autoStart: false,
       );
 
       final json = config.toJson();
@@ -23,6 +24,7 @@ void main() {
       expect(loaded.clientName, 'Unity');
       expect(loaded.runHotkey, 'R');
       expect(loaded.obfuscateNames, isTrue);
+      expect(loaded.autoStart, isFalse);
     });
 
     test('Obfuscator masks account names and IP addresses correctly', () {
@@ -208,6 +210,14 @@ void main() {
       expect(results.length, 2);
       expect(results.every((r) => r.success), isTrue);
       expect(progressItems, ['Trinity Trials (1/2)', 'PvP Fast (2/2)']);
+    });
+
+    test('LauncherService defaults autoStart to true and allows disabling', () {
+      const defaultLauncher = LauncherService();
+      expect(defaultLauncher.autoStart, isTrue);
+
+      const disabledLauncher = LauncherService(autoStart: false);
+      expect(disabledLauncher.autoStart, isFalse);
     });
   });
 
