@@ -1,5 +1,12 @@
 ## V0.1.3 A
 
+- Duplicate Bot Launch Prevention & Filtering
+    > Automatically ignores already-running bots when executing launch queue
+    - Validates bot process liveness before launch execution via ProcessTracker
+    - Filters out running bots and launches only inactive accounts sequentially
+    - Informs user if all queued accounts are already running without spawning new processes
+    - Clear UI status notifications indicating launched count and skipped running instances
+    - Automatically prunes launched and running accounts from the queue
 - Streamer / Obfuscation Privacy Mode
     > Complete name and IP anonymization for screenshots and streams
     - Global hotkey `O` and Settings menu option to mask sensitive account names into `Account #1`, `Account #2`, etc.
