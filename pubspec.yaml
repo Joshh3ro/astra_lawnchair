@@ -1,7 +1,7 @@
 name: astra_lawnchair
 description: A sample command-line application.
 version: 0.1.4
-# repository: https://github.com/my_org/my_repo
+repository: https://github.com/Joshh3ro/astra_lawnchair
 
 environment:
   sdk: ^3.13.2

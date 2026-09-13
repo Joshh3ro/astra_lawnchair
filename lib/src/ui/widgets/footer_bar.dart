@@ -50,7 +50,7 @@ class FooterBar extends StatelessComponent {
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(
-                    onTap: () => _openUrl('https://github.com/Joshh3ro/astra-lawnchair'),
+                    onTap: () => _openUrl('https://github.com/Joshh3ro/astra_lawnchair'),
                     child: const Text(
                       '(GitHub)',
                       style: LawnchairTheme.footerLink,
