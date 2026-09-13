@@ -1,3 +1,5 @@
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/cb95e2e2-1eab-47e8-9753-10b6b571423a" />
+
 # Astra Lawnchair
 
 *(A relaxed place to sit while your bots log in. Formerly known as "Astra Launcher.")*
