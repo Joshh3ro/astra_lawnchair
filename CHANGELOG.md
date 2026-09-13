@@ -1,5 +1,20 @@
+## V0.1.4 A
+
+- `--auto-start` Launch Parameter Support
+    > Automatically start bot execution upon process launch
+    - Added support for `--auto-start` CLI argument in LauncherService
+    - Added `autoStart` property (default: `true`) to AppConfig and serialized in JSON configs
+    - Added interactive toggle in Settings menu (`Auto-Start Config: ON / OFF`)
+    - Displays current Auto-Start status in the Settings inspection panel
+
 ## V0.1.3 A
 
+- About Tab & In-App Changelog Viewer
+    > Dedicated centered single-pane changelog reader directly in the TUI
+    - Added 'About' menu tab in top navigation hierarchy
+    - Swaps dual split-pane for a centered full-width PaneBox with version, author, and GitHub info
+    - Formatted release cards for all updates (V0.1.4 A down to V0.1.0 A)
+    - Scrollable layout with quick Backspace/Enter/Space return
 - Duplicate Bot Launch Prevention & Filtering
     > Automatically ignores already-running bots when executing launch queue
     - Validates bot process liveness before launch execution via ProcessTracker

@@ -62,7 +62,7 @@ void main() {
         expect(tester.terminalState, containsText('O'));
         expect(tester.terminalState, containsText('hide'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.3'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.4'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -194,7 +194,10 @@ void main() {
       );
       await configService.saveConfig(initialConfig);
 
-      await testNocterm('settings editor test', (tester) async {
+      await testNocterm(
+        'settings editor test',
+        size: const Size(80, 30),
+        (tester) async {
         await tester.pumpComponent(
           MainScreen(
             config: initialConfig,
@@ -235,9 +238,26 @@ void main() {
         reloaded = await configService.loadConfig();
         expect(reloaded!.staggerDelayMs, 500);
 
-        // Move down to Back and press Enter to return to Top Menu
+        // Move down through Root Path and Obfuscate to Auto-Start Config
         await tester.sendKey(LogicalKey.arrowDown); // Root Path
         await tester.sendKey(LogicalKey.arrowDown); // Obfuscate
+        await tester.sendKey(LogicalKey.arrowDown); // Auto-Start Config
+        expect(tester.terminalState, containsText('Auto-Start Config'));
+        expect(tester.terminalState, containsText('Active: ON (--auto-start enabled'));
+
+        // Toggle Auto-Start (ON -> OFF)
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Active: OFF (--auto-start'));
+        reloaded = await configService.loadConfig();
+        expect(reloaded!.autoStart, isFalse);
+
+        // Toggle back (OFF -> ON)
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Active: ON (--auto-start'));
+        reloaded = await configService.loadConfig();
+        expect(reloaded!.autoStart, isTrue);
+
+        // Move down to Back and press Enter to return to Top Menu
         await tester.sendKey(LogicalKey.arrowDown); // Back
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
@@ -603,6 +623,66 @@ void main() {
 
         // Should report that all selected accounts are already running and skip launch
         expect(tester.terminalState, containsText('All 1 selected account(s) are already running. Skipped launch.'));
+      });
+    });
+
+    test('MainScreen navigates to About tab and renders centered changelog', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+      );
+
+      await testNocterm(
+        'about tab navigation and changelog test',
+        size: const Size(80, 30),
+        (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            initialAccounts: const [],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Verify Top Menu header
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+
+        // Navigate down to About (Accounts -> Stats -> Hotkeys -> Settings -> About)
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.pump();
+
+        // Verify About is now visible and focused
+        expect(tester.terminalState, containsText('About'));
+
+        // Open About tab
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 2. Verify single PaneBox renders About header & changelog content
+        expect(tester.terminalState, containsText('ABOUT & CHANGELOG'));
+        expect(tester.terminalState, containsText('A S T R A   L A W N C H A I R'));
+        expect(tester.terminalState, containsText('Version 0.1.4'));
+        expect(tester.terminalState, containsText('Joshh3ro'));
+        expect(tester.terminalState, containsText('UPDATE CHANGELOG & RELEASE NOTES'));
+        expect(tester.terminalState, containsText('• V0.1.4 A (Latest Update) •'));
+
+        // 3. Press Backspace to return to Top Menu
+        await tester.sendKey(LogicalKey.backspace);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
+        expect(tester.terminalState, containsText('Accounts (0 accounts)'));
       });
     });
   });

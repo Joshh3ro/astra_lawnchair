@@ -17,13 +17,14 @@ import '../widgets/footer_bar.dart';
 import '../widgets/list_item_row.dart';
 import '../widgets/pane_box.dart';
 
-enum NavigationLevel { topMenu, accounts, configs, stats, settings, editingRootPath }
+enum NavigationLevel { topMenu, accounts, configs, stats, settings, editingRootPath, about }
 
 enum TopMenuItem {
   accounts('Accounts', 'Manage accounts and queue bots'),
   stats('Stats', 'Live account telemetry, currency rates & logs'),
   hotkeys('Hotkeys', 'Keyboard shortcuts & navigation'),
   settings('Settings', 'App preferences & launch parameters'),
+  about('About', 'Project info & update changelog'),
   quit('Quit', 'Exit Astra Lawnchair');
 
   final String label;
@@ -36,6 +37,7 @@ enum SettingsItem {
   stagger('Launch Stagger Delay', 'Pause duration between bot launches'),
   rootPath('Root Folder Path', 'Base directory containing AstraBot accounts'),
   obfuscate('Obfuscate / Streamer Mode', 'Mask account names & IP addresses for screenshots'),
+  autoStart('Auto-Start Config', 'Automatically start bot execution on launch'),
   back('[< Back to Top Menu]', 'Return to top-level menu');
 
   final String label;
@@ -126,6 +128,18 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _toggleAutoStart() async {
+    final nextState = !_currentConfig.autoStart;
+    final updated = _currentConfig.copyWith(autoStart: nextState);
+    await _persistConfig(updated);
+    _setStatus(
+      nextState
+          ? 'Auto-Start: ENABLED (--auto-start will be passed on launch).'
+          : 'Auto-Start: DISABLED (--auto-start omitted on launch).',
+      nextState ? LawnchairTheme.statusSuccess : LawnchairTheme.statusInfo,
+    );
+  }
+
   Future<void> _initProcessTracker() async {
     await _processTracker.initAndPrune();
     if (mounted) {
@@ -208,6 +222,7 @@ class _MainScreenState extends State<MainScreen> {
           }
           break;
         case NavigationLevel.editingRootPath:
+        case NavigationLevel.about:
           break;
       }
     });
@@ -243,6 +258,7 @@ class _MainScreenState extends State<MainScreen> {
           }
           break;
         case NavigationLevel.editingRootPath:
+        case NavigationLevel.about:
           break;
       }
     });
@@ -274,6 +290,12 @@ class _MainScreenState extends State<MainScreen> {
           _setStatus('Settings: Press Enter/Space to adjust or edit options, Backspace to go back.');
         });
         break;
+      case TopMenuItem.about:
+        setState(() {
+          _navLevel = NavigationLevel.about;
+          _setStatus('About & Changelog: Press Backspace to return to Top Menu.');
+        });
+        break;
       case TopMenuItem.quit:
         shutdownApp();
     }
@@ -300,7 +322,8 @@ class _MainScreenState extends State<MainScreen> {
         _setStatus('Returned to Accounts list.');
       } else if (_navLevel == NavigationLevel.accounts ||
           _navLevel == NavigationLevel.stats ||
-          _navLevel == NavigationLevel.settings) {
+          _navLevel == NavigationLevel.settings ||
+          _navLevel == NavigationLevel.about) {
         _navLevel = NavigationLevel.topMenu;
         _setStatus('Returned to Top Menu.');
       }
@@ -387,6 +410,9 @@ class _MainScreenState extends State<MainScreen> {
         break;
       case SettingsItem.obfuscate:
         _toggleObfuscation();
+        break;
+      case SettingsItem.autoStart:
+        _toggleAutoStart();
         break;
       case SettingsItem.back:
         _popNavigation();
@@ -493,6 +519,7 @@ class _MainScreenState extends State<MainScreen> {
         staggerDelayMs: _currentConfig.staggerDelayMs,
         clientName: _currentConfig.clientName,
         isDryRun: component.launcherService.isDryRun,
+        autoStart: _currentConfig.autoStart,
       );
 
       final results = await launcher.launchAll(
@@ -648,6 +675,9 @@ class _MainScreenState extends State<MainScreen> {
         case NavigationLevel.editingRootPath:
           _submitRootPath();
           break;
+        case NavigationLevel.about:
+          _popNavigation();
+          break;
       }
       return true;
     }
@@ -674,6 +704,8 @@ class _MainScreenState extends State<MainScreen> {
         _activateTopMenuItem(TopMenuItem.values[_focusedTopMenuIndex]);
       } else if (_navLevel == NavigationLevel.settings) {
         _handleSettingsAction(SettingsItem.values[_focusedSettingsIndex]);
+      } else if (_navLevel == NavigationLevel.about) {
+        _popNavigation();
       }
       return true;
     }
@@ -711,6 +743,9 @@ class _MainScreenState extends State<MainScreen> {
       case NavigationLevel.editingRootPath:
         leftPaneTitle = 'SETTINGS: Edit Root Path';
         break;
+      case NavigationLevel.about:
+        leftPaneTitle = 'ABOUT & CHANGELOG';
+        break;
     }
 
     return Focusable(
@@ -747,26 +782,32 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const Divider(),
 
-          // Main Split Pane
+          // Main View (Full-width Single Pane for About, or Split Pane for Menus)
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Left Pane: Menu Stack
-                Expanded(
-                  child: PaneBox(
-                    title: leftPaneTitle,
+            child: _navLevel == NavigationLevel.about
+                ? PaneBox(
+                    title: 'ABOUT & CHANGELOG',
                     isFocused: true,
-                    child: _buildLeftPaneContent(),
-                  ),
-                ),
+                    child: _buildAboutContent(),
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Left Pane: Menu Stack
+                      Expanded(
+                        child: PaneBox(
+                          title: leftPaneTitle,
+                          isFocused: true,
+                          child: _buildLeftPaneContent(),
+                        ),
+                      ),
 
-                // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
-                Expanded(
-                  child: _buildRightPane(),
-                ),
-              ],
-            ),
+                      // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
+                      Expanded(
+                        child: _buildRightPane(),
+                      ),
+                    ],
+                  ),
           ),
 
           // Footer & Status Bar
@@ -999,16 +1040,21 @@ class _MainScreenState extends State<MainScreen> {
                     ? 'Active: ON (Account names & IPs masked, press Space/Enter to toggle)'
                     : 'Active: OFF (Names & IPs visible, press Space/Enter to toggle)';
                 break;
+              case SettingsItem.autoStart:
+                subtitle = _currentConfig.autoStart
+                    ? 'Active: ON (--auto-start enabled, press Space/Enter to toggle)'
+                    : 'Active: OFF (--auto-start disabled, press Space/Enter to toggle)';
+                break;
               case SettingsItem.back:
                 subtitle = 'Return to top-level menu';
                 break;
             }
 
             return Padding(
-              key: ValueKey('setting_pad_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_$_isObfuscated'),
+              key: ValueKey('setting_pad_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_${_isObfuscated}_${_currentConfig.autoStart}'),
               padding: const EdgeInsets.only(bottom: 1),
               child: ListItemRow(
-                key: ValueKey('setting_row_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_$_isObfuscated'),
+                key: ValueKey('setting_row_${item.name}_${_currentConfig.clientName}_${_currentConfig.staggerDelayMs}_${_isObfuscated}_${_currentConfig.autoStart}'),
                 title: item.label,
                 subtitle: subtitle,
                 subtitleBelow: true,
@@ -1053,6 +1099,9 @@ class _MainScreenState extends State<MainScreen> {
             ],
           ),
         );
+
+      case NavigationLevel.about:
+        return const SizedBox();
     }
   }
 
@@ -1221,6 +1270,7 @@ class _MainScreenState extends State<MainScreen> {
           _settingRow('Client Parameter', _currentConfig.clientName),
           _settingRow('Run Hotkey', _currentConfig.runHotkey),
           _settingRow('Obfuscate Mode', _isObfuscated ? 'Enabled (ON)' : 'Disabled (OFF)'),
+          _settingRow('Auto-Start Bot', _currentConfig.autoStart ? 'Enabled (ON: --auto-start)' : 'Disabled (OFF)'),
           const SizedBox(height: 1),
           const Divider(),
           const SizedBox(height: 1),
@@ -1396,6 +1446,191 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(width: 2),
           Text('($rate)', style: LawnchairTheme.statRate),
         ],
+      ],
+    );
+  }
+
+  Component _buildAboutContent() {
+    return SingleChildScrollView(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(height: 1),
+            // Header Banner
+            const Text(
+              'A S T R A   L A W N C H A I R',
+              style: TextStyle(
+                color: Colors.cyan,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            const Text(
+              'A fast, keyboard-driven Terminal Launcher & Telemetry Dashboard for AstraBot',
+              style: LawnchairTheme.itemNormal,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            const Text(
+              'Version 0.1.4 | Created by Joshh3ro | Built with Nocterm',
+              style: LawnchairTheme.footerDesc,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            const Text(
+              'Repository: https://github.com/Joshh3ro/astra_lawnchair',
+              style: LawnchairTheme.footerKey,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Changelog Section Title
+            const Text(
+              'UPDATE CHANGELOG & RELEASE NOTES',
+              style: TextStyle(
+                color: Colors.yellow,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            const Text(
+              'Track recent enhancements, fixes, and architectural revisions directly in the TUI.',
+              style: LawnchairTheme.footerDesc,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 2),
+
+            // Release V0.1.4 A
+            _aboutReleaseCard(
+              version: 'V0.1.4 A (Latest Update)',
+              date: '2026-09-13',
+              highlights: [
+                'Auto-Start Launch Parameter (--auto-start): Added launch argument support instructing AstraBot instances to automatically run their assigned configuration upon startup.',
+                'Interactive Auto-Start Settings Toggle: Real-time toggle in Settings menu (Space/Enter) with instant persistence to lawnchair_config.json and live right-pane inspector display.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.3 A
+            _aboutReleaseCard(
+              version: 'V0.1.3 A',
+              date: '2026-09-13',
+              highlights: [
+                'About & In-App Changelog Viewer: Dedicated full-width TUI changelog tab to keep operators informed directly inside the terminal without checking GitHub.',
+                'Duplicate Bot Launch Prevention: Automatically verifies OS process liveness before launch. Skips already-running bots while launching only inactive accounts sequentially.',
+                'Streamer & Obfuscation Mode: Global \'O\' hotkey and Settings option to anonymize account names (Account #1, Account #2) and completely mask proxy IP addresses (***.***.***.***).',
+                'Preserved Session Telemetry: Retained live running session visibility, PID badges, and stat dashboards while obfuscation mode is enabled.',
+                'Statistical Number Grouping & Compression: Standard dot thousands formatting (1.000, 10.000) with automatic space-saving compression for high magnitudes (1.11B, 1.5T).',
+                'Single-Line Header Optimization: Truncates deep root paths with ellipsis to guarantee clean single-line header row rendering on narrow terminals.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.2 A
+            _aboutReleaseCard(
+              version: 'V0.1.2 A',
+              date: '2026-09-12',
+              highlights: [
+                'Real-Time Account Telemetry & Stats: Dedicated \'Stats\' view with live dual-pane dashboard tracking session uptime, map, bot state, currencies, and special drops.',
+                'High-Efficiency Incremental Log Reader: Non-blocking byte-offset seeking parser (StatTrackerService) reading only newly appended bytes without disk bottlenecks.',
+                'Live Hourly Gain Velocities: Real-time rate calculation for Uridium/hr, Credits/hr, XP/hr, and Honor/hr.',
+                'Combat & Survivability Tracking: Destruction counter, enemy killer identifier, death map, and elapsed time since last destruction.',
+                'Session-Aware Correlation: Filters log timestamps matching active session start time to prevent stale historical log contamination.',
+                'Persistent Session Recovery: Probes OS PID liveness on app boot via tasklist/kill(0) to resume tracking running bots without losing uptime continuity.',
+                'Clean Terminal Teardown: Uses Nocterm shutdownApp() across all quit paths to completely restore alternate screen buffers and cursor visibility.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.1 A
+            _aboutReleaseCard(
+              version: 'V0.1.1 A',
+              date: '2026-09-11',
+              highlights: [
+                'Hierarchical TUI Navigation: Revamped menu structure (Accounts, Stats, Hotkeys, Settings, Quit) with drill-down account configuration staging.',
+                'Interactive Settings Editor: In-app controls to adjust launch stagger delay (200-1000ms), client parameter (Unity/Flash), and root scan directory.',
+                'Process Tracking & PID Management: Detached process launch tracking, running badges, and \'K\' hotkey for clean process tree termination via taskkill.',
+                'Interactive Hyperlinks: Clickable footer repository link utilizing OSC 8 terminal escape sequences.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.0 A
+            _aboutReleaseCard(
+              version: 'V0.1.0 A',
+              date: '2026-09-09',
+              highlights: [
+                'Initial Release: Multi-account discovery, configuration scanning, and staggered batch launching.',
+              ],
+            ),
+            const SizedBox(height: 2),
+
+            // Navigation Return Hint
+            const Text(
+              'Press Backspace (or Enter / Space) to return to Top Menu',
+              style: TextStyle(
+                color: Colors.cyan,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _aboutReleaseCard({
+    required String version,
+    required String date,
+    required List<String> highlights,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '• $version •',
+              style: const TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Text('[$date]', style: LawnchairTheme.footerDesc),
+          ],
+        ),
+        const SizedBox(height: 1),
+        for (final item in highlights)
+          Container(
+            margin: const EdgeInsets.only(bottom: 1),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('  - ', style: LawnchairTheme.footerKey),
+                Expanded(
+                  child: Text(item, style: LawnchairTheme.itemNormal),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

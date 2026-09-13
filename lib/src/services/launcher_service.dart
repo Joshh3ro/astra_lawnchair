@@ -19,11 +19,13 @@ class LauncherService {
   final int staggerDelayMs;
   final String clientName;
   final bool isDryRun;
+  final bool autoStart;
 
   const LauncherService({
     this.staggerDelayMs = 400,
     this.clientName = 'Unity',
     this.isDryRun = false,
+    this.autoStart = true,
   });
 
   /// Launches a list of targets sequentially with staggerDelayMs pause between each.
@@ -76,6 +78,9 @@ class LauncherService {
     }
     args.addAll(['--client', clientName]);
     args.addAll(['--config', target.configName]);
+    if (autoStart) {
+      args.add('--auto-start');
+    }
 
     if (isDryRun) {
       return LaunchResult(
