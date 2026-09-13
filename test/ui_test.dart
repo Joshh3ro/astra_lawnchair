@@ -512,6 +512,99 @@ void main() {
         expect(tester.terminalState, containsText('RUNNING (PID: 77889)'));
       });
     });
+
+    test('MainScreen ignores already-running bots when launching queue', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 200,
+      );
+
+      const runningAccount = Account(
+        name: 'RunningBot',
+        folderPath: 'C:\\bots\\RunningBot',
+        exePath: 'C:\\bots\\RunningBot\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP'],
+      );
+
+      const idleAccount = Account(
+        name: 'IdleBot',
+        folderPath: 'C:\\bots\\IdleBot',
+        exePath: 'C:\\bots\\IdleBot\\AstraBot.exe',
+        datPath: '',
+        configs: ['Farming'],
+      );
+
+      // Register RunningBot as active
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: runningAccount, configName: 'PvP'),
+        12345,
+      );
+
+      await testNocterm('skip already running bots test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: const [runningAccount, idleAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [2]'));
+
+        // Drill into RunningBot and queue 'PvP'
+        await tester.sendKey(LogicalKey.enter);
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Added "RunningBot — "PvP"" to launch queue.'));
+
+        // Pop back to Accounts
+        await tester.sendKey(LogicalKey.backspace);
+
+        // Move down to IdleBot, drill in, and queue 'Farming'
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.enter);
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Added "IdleBot — "Farming"" to launch queue.'));
+
+        // Pop back to Accounts
+        await tester.sendKey(LogicalKey.backspace);
+
+        // Press 'R' to run selected queue
+        await tester.sendKey(LogicalKey.keyR);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        // Verify status states that 1 instance was launched and 1 already running was skipped
+        expect(tester.terminalState, containsText('Successfully launched 1 bot instance(s) (1 already running skipped)!'));
+
+        // IdleBot should now also be running
+        expect(processTracker.isRunning('IdleBot'), isTrue);
+        expect(processTracker.isRunning('RunningBot'), isTrue);
+
+        // 2. Now queue RunningBot again and trigger 'R' when ALL queued accounts are running
+        await tester.sendKey(LogicalKey.arrowUp); // Focus RunningBot
+        await tester.sendKey(LogicalKey.enter); // Drill in
+        await tester.sendKey(LogicalKey.space); // Queue PvP
+        await tester.sendKey(LogicalKey.backspace); // Pop back
+
+        await tester.sendKey(LogicalKey.keyR);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Should report that all selected accounts are already running and skip launch
+        expect(tester.terminalState, containsText('All 1 selected account(s) are already running. Skipped launch.'));
+      });
+    });
   });
 }
 

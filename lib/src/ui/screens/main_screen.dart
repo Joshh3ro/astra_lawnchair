@@ -463,9 +463,29 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
+    // Check which targets are already running and partition the queue
+    final alreadyRunning = _selectedQueue
+        .where((target) => _processTracker.isRunning(target.account.name))
+        .toList();
+    final toLaunch = _selectedQueue
+        .where((target) => !_processTracker.isRunning(target.account.name))
+        .toList();
+
+    if (toLaunch.isEmpty) {
+      setState(() {
+        _selectedQueue.clear();
+        _setStatus(
+          'All ${alreadyRunning.length} selected account(s) are already running. Skipped launch.',
+          LawnchairTheme.statusInfo,
+        );
+      });
+      return;
+    }
+
     setState(() {
       _isBusy = true;
-      _setStatus('Preparing to launch ${_selectedQueue.length} instances...', LawnchairTheme.statusInfo);
+      final skipNote = alreadyRunning.isNotEmpty ? ' (${alreadyRunning.length} already running skipped)' : '';
+      _setStatus('Preparing to launch ${toLaunch.length} instance(s)$skipNote...', LawnchairTheme.statusInfo);
     });
 
     try {
@@ -476,7 +496,7 @@ class _MainScreenState extends State<MainScreen> {
       );
 
       final results = await launcher.launchAll(
-        _selectedQueue,
+        toLaunch,
         onProgress: (target, current, total) {
           _setStatus('Launching [$current/$total]: "${target.displayName}"...', LawnchairTheme.statusInfo);
         },
@@ -495,11 +515,16 @@ class _MainScreenState extends State<MainScreen> {
 
       setState(() {
         _isBusy = false;
+        // Remove successfully launched and already running targets from the queue
+        final completedTargets = results.where((r) => r.success).map((r) => r.target).toSet();
+        _selectedQueue.removeWhere((t) => completedTargets.contains(t) || alreadyRunning.contains(t));
+
+        final skippedMsg = alreadyRunning.isNotEmpty ? ' (${alreadyRunning.length} already running skipped)' : '';
         if (failCount == 0) {
-          _setStatus('Successfully launched all $successCount bot instances!', LawnchairTheme.statusSuccess);
+          _setStatus('Successfully launched $successCount bot instance(s)$skippedMsg!', LawnchairTheme.statusSuccess);
         } else {
           final firstError = results.firstWhere((r) => !r.success).errorMessage ?? 'Unknown error';
-          _setStatus('Launched $successCount bots ($failCount failed). Error: $firstError', LawnchairTheme.statusError);
+          _setStatus('Launched $successCount bots ($failCount failed)$skippedMsg. Error: $firstError', LawnchairTheme.statusError);
         }
       });
     } catch (e) {
