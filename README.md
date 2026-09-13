@@ -2,7 +2,7 @@
 
 # Astra Lawnchair
 
-*(A relaxed place to sit while your bots log in. Formerly known as "Astra Launcher.")*
+*(A relaxed place to sit while your bots log in. Formerly known as "Astra Launcher." ill probably be changing the name to "Astral Lawnchair")*
 
 A Dart terminal UI (TUI) app, built with the **Nocterm** framework, that replaces a folder full of hand-written `.bat` launcher files. It scans a directory of AstraBot account folders, lets the user pick one or more accounts and one or more configs per account, and launches all selected account/config combinations at once as detached processes with staggered intervals.
 
