@@ -2,9 +2,9 @@
 
 - Automated Bot Configuration Hot-Swapping & Reloading (`S` Hotkey)
     > Instant in-place bot configuration switching and reloading without manual kill-queue-run steps
-    - **One-Key Hot-Swap**: Press `S` while focused on any config in the Configs menu to instantly terminate the active AstraBot process, wait until process handles are confirmed closed in the OS, sync the target configuration over `config.json` in the account root folder, and launch AstraBot with the new `--config "<name>"` parameter
-    - **Guaranteed Config Synchronization**: Copies `configs/<name>.json` directly to `config.json` in the account directory before launch, ensuring AstraBot reliably boots with the chosen configuration profile
-    - **Process Death Verification**: Confirms the previous bot PID is fully terminated before spawning the new instance, preventing dual-instance conflicts or config overwrites on exit
+    - **One-Key Hot-Swap**: Press `S` while focused on any config in the Configs menu to instantly terminate the active AstraBot process, wait until process handles are confirmed closed in the OS, and relaunch AstraBot with the new `--config "<name>"` parameter
+    - **Native Profile Launching**: Passes `--config "<name>"` directly to AstraBot without touching or copying to root `config.json`, preserving the bot's base configuration intact
+    - **Process Death Verification**: Confirms the previous bot PID is fully terminated before spawning the new instance, preventing dual-instance conflicts or port lockouts
     - **Smart Accounts Screen Action**: Pressing `S` on an account in the Accounts list switches to any staged configuration in the launch queue, or automatically digs into the account's configs list for immediate selection
     - **Full Obfuscation Support**: Emits masked status notifications (`Switched "Account #1" to config "PvP" (PID: ...)`) ensuring zero account name exposures in streamer mode
     - **UI & Hotkey Guidance**: Added `S: switch` to the footer bar, updated status prompts, and documented hotkey controls in the Hotkeys and Running Session panels
