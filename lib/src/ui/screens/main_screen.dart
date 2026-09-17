@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
 import '../../models/app_config.dart';
@@ -10,14 +11,16 @@ import '../../services/launcher_service.dart';
 import '../../services/process_tracker_service.dart';
 import '../../services/scanner_service.dart';
 import '../../services/stat_tracker_service.dart';
+import '../../utils/item_classifier.dart';
 import '../../utils/number_formatter.dart';
 import '../../utils/obfuscator.dart';
 import '../theme.dart';
+import '../widgets/ascii_chart.dart';
 import '../widgets/footer_bar.dart';
 import '../widgets/list_item_row.dart';
 import '../widgets/pane_box.dart';
 
-enum NavigationLevel { topMenu, accounts, configs, stats, settings, editingRootPath, about }
+enum NavigationLevel { topMenu, accounts, configs, stats, expandedStats, settings, editingRootPath, about }
 
 enum TopMenuItem {
   accounts('Accounts', 'Manage accounts and queue bots'),
@@ -95,6 +98,12 @@ class _MainScreenState extends State<MainScreen> {
   Timer? _statsPollTimer;
 
   bool _isObfuscated = false;
+
+  // Chart series visibility toggles in expanded telemetry view
+  bool _showChartUridium = true;
+  bool _showChartCredits = true;
+  bool _showChartXp = true;
+  bool _showChartHonor = true;
 
   static const List<int> _staggerPresets = [200, 300, 400, 500, 750, 1000];
 
@@ -223,6 +232,7 @@ class _MainScreenState extends State<MainScreen> {
           break;
         case NavigationLevel.editingRootPath:
         case NavigationLevel.about:
+        case NavigationLevel.expandedStats:
           break;
       }
     });
@@ -259,6 +269,7 @@ class _MainScreenState extends State<MainScreen> {
           break;
         case NavigationLevel.editingRootPath:
         case NavigationLevel.about:
+        case NavigationLevel.expandedStats:
           break;
       }
     });
@@ -277,7 +288,7 @@ class _MainScreenState extends State<MainScreen> {
           _navLevel = NavigationLevel.stats;
           _focusedStatsAccountIndex = 0;
           _pollStats();
-          _setStatus('Account Stats: Press ↑/↓ to browse accounts, Backspace to return to Top Menu.');
+          _setStatus('Account Stats: Press ↑/↓ to browse, Enter to expand dashboard & graphs, Backspace to return.');
         });
         break;
       case TopMenuItem.hotkeys:
@@ -301,12 +312,38 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _drillIntoAccount(Account account) {
+  String _getAccountDisplayName(String accountName) {
+    final idx = _accounts.indexWhere((a) => a.name == accountName);
+    return Obfuscator.obfuscateAccountName(
+      accountName,
+      index: idx >= 0 ? idx : null,
+      enabled: _isObfuscated,
+    );
+  }
+
+  String _getTargetDisplayName(LaunchTarget target) {
+    final idx = _accounts.indexWhere((a) => a.name == target.account.name);
+    return target.getDisplayName(
+      obfuscated: _isObfuscated,
+      accountIndex: idx >= 0 ? idx : null,
+    );
+  }
+
+  void _digIntoAccount(Account account) {
     setState(() {
       _activeAccount = account;
       _navLevel = NavigationLevel.configs;
       _focusedConfigIndex = 0;
-      _setStatus('Viewing configs for "${account.name}". Press Space to toggle, Backspace to return.');
+      _setStatus('Viewing configs for "${_getAccountDisplayName(account.name)}". Press Space to toggle, S to switch/reload, Backspace to return.');
+    });
+  }
+
+  void _digIntoExpandedStats(Account account) {
+    setState(() {
+      _activeAccount = account;
+      _navLevel = NavigationLevel.expandedStats;
+      _pollStats();
+      _setStatus('Expanded Telemetry: "${_getAccountDisplayName(account.name)}". Press Backspace to return.');
     });
   }
 
@@ -320,6 +357,9 @@ class _MainScreenState extends State<MainScreen> {
         _navLevel = NavigationLevel.accounts;
         _activeAccount = null;
         _setStatus('Returned to Accounts list.');
+      } else if (_navLevel == NavigationLevel.expandedStats) {
+        _navLevel = NavigationLevel.stats;
+        _setStatus('Returned to Account Stats view.');
       } else if (_navLevel == NavigationLevel.accounts ||
           _navLevel == NavigationLevel.stats ||
           _navLevel == NavigationLevel.settings ||
@@ -430,12 +470,96 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       if (_selectedQueue.contains(target)) {
         _selectedQueue.remove(target);
-        _setStatus('Removed "${target.displayName}" from launch queue.');
+        _setStatus('Removed "${_getTargetDisplayName(target)}" from launch queue.');
       } else {
         _selectedQueue.add(target);
-        _setStatus('Added "${target.displayName}" to launch queue.');
+        _setStatus('Added "${_getTargetDisplayName(target)}" to launch queue.');
       }
     });
+  }
+
+  Future<void> _switchOrReloadConfig(Account account, String configName) async {
+    if (_isBusy) return;
+
+    final target = LaunchTarget(account: account, configName: configName);
+    final accountDisplayName = _getAccountDisplayName(account.name);
+    final existingSession = _processTracker.getSession(account.name);
+    final wasRunning = existingSession != null;
+    final isSameConfig = wasRunning && existingSession.configName == configName;
+
+    setState(() {
+      _isBusy = true;
+      if (isSameConfig) {
+        _setStatus('Reloading "$accountDisplayName" with config "$configName" (restarting bot)...', LawnchairTheme.statusInfo);
+      } else if (wasRunning) {
+        _setStatus('Switching "$accountDisplayName" to config "$configName" (restarting bot)...', LawnchairTheme.statusInfo);
+      } else {
+        _setStatus('Launching "$accountDisplayName" with config "$configName"...', LawnchairTheme.statusInfo);
+      }
+    });
+
+    try {
+      if (wasRunning) {
+        final oldPid = existingSession.pid;
+        await _processTracker.killSession(account.name);
+        _statTracker.resetAccount(account.name);
+
+        // Wait until old bot process is confirmed dead before relaunching
+        int waitedMs = 0;
+        while (waitedMs < 3000) {
+          final alive = await _processTracker.isProcessAlive(oldPid);
+          if (!alive) break;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          waitedMs += 100;
+        }
+      }
+
+      // Sync targeted config file to config.json in account root directory
+      try {
+        final sourceConfigFile = File(p.join(account.folderPath, 'configs', '$configName.json'));
+        if (sourceConfigFile.existsSync()) {
+          final destConfigFile = File(p.join(account.folderPath, 'config.json'));
+          destConfigFile.writeAsBytesSync(sourceConfigFile.readAsBytesSync());
+        }
+      } catch (_) {}
+
+      final launcher = LauncherService(
+        staggerDelayMs: _currentConfig.staggerDelayMs,
+        clientName: _currentConfig.clientName,
+        isDryRun: component.launcherService.isDryRun,
+        autoStart: _currentConfig.autoStart,
+      );
+
+      final result = await launcher.launchSingle(target);
+
+      if (result.success && result.pid != null) {
+        _statTracker.resetAccount(account.name);
+        await _processTracker.registerLaunch(target, result.pid!);
+
+        setState(() {
+          _isBusy = false;
+          _selectedQueue.remove(target);
+
+          if (isSameConfig) {
+            _setStatus('Reloaded "$accountDisplayName" with config "$configName" (PID: ${result.pid}).', LawnchairTheme.statusSuccess);
+          } else if (wasRunning) {
+            _setStatus('Switched "$accountDisplayName" to config "$configName" (PID: ${result.pid}).', LawnchairTheme.statusSuccess);
+          } else {
+            _setStatus('Launched "$accountDisplayName" with config "$configName" (PID: ${result.pid}).', LawnchairTheme.statusSuccess);
+          }
+        });
+      } else {
+        setState(() {
+          _isBusy = false;
+          _setStatus('Failed to launch "$configName": ${result.errorMessage ?? "Unknown error"}', LawnchairTheme.statusError);
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isBusy = false;
+        _setStatus('Hot-swap failed: $e', LawnchairTheme.statusError);
+      });
+    }
   }
 
   Future<void> _refreshFromDisk() async {
@@ -454,7 +578,7 @@ class _MainScreenState extends State<MainScreen> {
           _focusedAccountIndex = _accounts.isEmpty ? 0 : _accounts.length - 1;
         }
 
-        // If currently drilled into an account, re-bind active account
+        // If currently dug into an account, re-bind active account
         if (_activeAccount != null) {
           final found = _accounts.where((a) => a.name == _activeAccount!.name);
           if (found.isNotEmpty) {
@@ -525,7 +649,7 @@ class _MainScreenState extends State<MainScreen> {
       final results = await launcher.launchAll(
         toLaunch,
         onProgress: (target, current, total) {
-          _setStatus('Launching [$current/$total]: "${target.displayName}"...', LawnchairTheme.statusInfo);
+          _setStatus('Launching [$current/$total]: "${_getTargetDisplayName(target)}"...', LawnchairTheme.statusInfo);
         },
       );
 
@@ -579,22 +703,23 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
+    final targetDisplayName = _getAccountDisplayName(targetAccountName);
     final session = _processTracker.getSession(targetAccountName);
     if (session == null) {
-      _setStatus('Account "$targetAccountName" is not currently running.', LawnchairTheme.statusInfo);
+      _setStatus('Account "$targetDisplayName" is not currently running.', LawnchairTheme.statusInfo);
       return;
     }
 
     setState(() {
       _isBusy = true;
-      _setStatus('Terminating bot for "$targetAccountName" (PID: ${session.pid})...', LawnchairTheme.statusInfo);
+      _setStatus('Terminating bot for "$targetDisplayName" (PID: ${session.pid})...', LawnchairTheme.statusInfo);
     });
 
     final killed = await _processTracker.killSession(targetAccountName);
     setState(() {
       _isBusy = false;
       if (killed) {
-        _setStatus('Terminated bot for "$targetAccountName" (PID: ${session.pid}).', LawnchairTheme.statusSuccess);
+        _setStatus('Terminated bot for "$targetDisplayName" (PID: ${session.pid}).', LawnchairTheme.statusSuccess);
       } else {
         _setStatus('Process ${session.pid} already exited or could not be terminated.', LawnchairTheme.statusError);
       }
@@ -629,11 +754,68 @@ class _MainScreenState extends State<MainScreen> {
       return true;
     }
 
+    // S: Hot-swap / reload focused config or running bot session
+    if (_navLevel != NavigationLevel.editingRootPath &&
+        (event.character?.toLowerCase() == 's' || event.logicalKey == LogicalKey.keyS)) {
+      if (_navLevel == NavigationLevel.configs) {
+        final account = _activeAccount;
+        if (account != null && account.configs.isNotEmpty && _focusedConfigIndex < account.configs.length) {
+          final configName = account.configs[_focusedConfigIndex];
+          _switchOrReloadConfig(account, configName);
+        }
+        return true;
+      } else if (_navLevel == NavigationLevel.accounts) {
+        if (_accounts.isNotEmpty && _focusedAccountIndex < _accounts.length) {
+          final account = _accounts[_focusedAccountIndex];
+          final queuedForAccount = _selectedQueue.where((t) => t.account.name == account.name).toList();
+          if (queuedForAccount.isNotEmpty) {
+            _switchOrReloadConfig(account, queuedForAccount.first.configName);
+          } else {
+            _digIntoAccount(account);
+            _setStatus('Dig into "${_getAccountDisplayName(account.name)}": highlight the new config and press S to switch.');
+          }
+          return true;
+        }
+      }
+    }
+
     // O: Toggle Obfuscate / Streamer Mode (unless typing in text field)
     if (_navLevel != NavigationLevel.editingRootPath &&
         (event.character?.toLowerCase() == 'o' || event.logicalKey == LogicalKey.keyO)) {
       _toggleObfuscation();
       return true;
+    }
+
+    // Number keys 1-4: Toggle chart series in expanded telemetry mode
+    if (_navLevel == NavigationLevel.expandedStats) {
+      if (event.character == '1' || event.logicalKey == LogicalKey.digit1) {
+        setState(() {
+          _showChartUridium = !_showChartUridium;
+          _setStatus('Chart: Uridium series ${_showChartUridium ? "ON" : "OFF"}.');
+        });
+        return true;
+      }
+      if (event.character == '2' || event.logicalKey == LogicalKey.digit2) {
+        setState(() {
+          _showChartCredits = !_showChartCredits;
+          _setStatus('Chart: Credits series ${_showChartCredits ? "ON" : "OFF"}.');
+        });
+        return true;
+      }
+      if (event.character == '3' || event.logicalKey == LogicalKey.digit3) {
+        setState(() {
+          _showChartXp = !_showChartXp;
+          _setStatus('Chart: Experience series ${_showChartXp ? "ON" : "OFF"}.');
+        });
+        return true;
+      }
+      if (event.character == '4' || event.logicalKey == LogicalKey.digit4) {
+        setState(() {
+          _showChartHonor = !_showChartHonor;
+          _setStatus('Chart: Honor series ${_showChartHonor ? "ON" : "OFF"}.');
+        });
+        return true;
+      }
     }
 
     // Arrow keys
@@ -654,7 +836,7 @@ class _MainScreenState extends State<MainScreen> {
           break;
         case NavigationLevel.accounts:
           if (_accounts.isNotEmpty) {
-            _drillIntoAccount(_accounts[_focusedAccountIndex]);
+            _digIntoAccount(_accounts[_focusedAccountIndex]);
           }
           break;
         case NavigationLevel.configs:
@@ -665,9 +847,13 @@ class _MainScreenState extends State<MainScreen> {
           }
           break;
         case NavigationLevel.stats:
-          // In stats view, enter or click can trigger immediate refresh of focused account
-          _pollStats();
-          _setStatus('Refreshed stats for active account.');
+          if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
+            final targetAccount = _accounts[_focusedStatsAccountIndex];
+            _digIntoExpandedStats(targetAccount);
+          }
+          break;
+        case NavigationLevel.expandedStats:
+          _popNavigation();
           break;
         case NavigationLevel.settings:
           _handleSettingsAction(SettingsItem.values[_focusedSettingsIndex]);
@@ -698,7 +884,7 @@ class _MainScreenState extends State<MainScreen> {
         }
       } else if (_navLevel == NavigationLevel.accounts) {
         if (_accounts.isNotEmpty) {
-          _drillIntoAccount(_accounts[_focusedAccountIndex]);
+          _digIntoAccount(_accounts[_focusedAccountIndex]);
         }
       } else if (_navLevel == NavigationLevel.topMenu) {
         _activateTopMenuItem(TopMenuItem.values[_focusedTopMenuIndex]);
@@ -724,13 +910,8 @@ class _MainScreenState extends State<MainScreen> {
         leftPaneTitle = 'MENU: Accounts [${_accounts.length}]';
         break;
       case NavigationLevel.configs:
-        final accountIndex = _activeAccount != null ? _accounts.indexWhere((a) => a.name == _activeAccount!.name) : -1;
         final activeName = _activeAccount != null
-            ? Obfuscator.obfuscateAccountName(
-                _activeAccount!.name,
-                index: accountIndex >= 0 ? accountIndex : null,
-                enabled: _isObfuscated,
-              )
+            ? _getAccountDisplayName(_activeAccount!.name)
             : '';
         leftPaneTitle = 'MENU: $activeName (${_activeAccount?.configs.length ?? 0} configs)';
         break;
@@ -745,6 +926,9 @@ class _MainScreenState extends State<MainScreen> {
         break;
       case NavigationLevel.about:
         leftPaneTitle = 'ABOUT & CHANGELOG';
+        break;
+      case NavigationLevel.expandedStats:
+        leftPaneTitle = 'EXPANDED TELEMETRY';
         break;
     }
 
@@ -782,7 +966,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const Divider(),
 
-          // Main View (Full-width Single Pane for About, or Split Pane for Menus)
+          // Main View (Full-width Single Pane for About / Expanded Stats, or Split Pane for Menus)
           Expanded(
             child: _navLevel == NavigationLevel.about
                 ? PaneBox(
@@ -790,24 +974,30 @@ class _MainScreenState extends State<MainScreen> {
                     isFocused: true,
                     child: _buildAboutContent(),
                   )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Left Pane: Menu Stack
-                      Expanded(
-                        child: PaneBox(
-                          title: leftPaneTitle,
-                          isFocused: true,
-                          child: _buildLeftPaneContent(),
-                        ),
-                      ),
+                : (_navLevel == NavigationLevel.expandedStats
+                    ? PaneBox(
+                        title: _expandedStatsTitle(),
+                        isFocused: true,
+                        child: _buildExpandedStatsContent(),
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Left Pane: Menu Stack
+                          Expanded(
+                            child: PaneBox(
+                              title: leftPaneTitle,
+                              isFocused: true,
+                              child: _buildLeftPaneContent(),
+                            ),
+                          ),
 
-                      // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
-                      Expanded(
-                        child: _buildRightPane(),
-                      ),
-                    ],
-                  ),
+                          // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
+                          Expanded(
+                            child: _buildRightPane(),
+                          ),
+                        ],
+                      )),
           ),
 
           // Footer & Status Bar
@@ -886,11 +1076,7 @@ class _MainScreenState extends State<MainScreen> {
             final session = _processTracker.getSession(account.name);
             final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
 
-            final displayName = Obfuscator.obfuscateAccountName(
-              account.name,
-              index: index,
-              enabled: _isObfuscated,
-            );
+            final displayName = _getAccountDisplayName(account.name);
 
             return ListItemRow(
               title: displayName,
@@ -904,7 +1090,7 @@ class _MainScreenState extends State<MainScreen> {
                 setState(() {
                   _focusedAccountIndex = index;
                 });
-                _drillIntoAccount(account);
+                _digIntoAccount(account);
               },
             );
           },
@@ -994,11 +1180,7 @@ class _MainScreenState extends State<MainScreen> {
               subtitle = 'No telemetry data loaded yet';
             }
 
-            final displayName = Obfuscator.obfuscateAccountName(
-              account.name,
-              index: index,
-              enabled: _isObfuscated,
-            );
+            final displayName = _getAccountDisplayName(account.name);
 
             return ListItemRow(
               title: displayName,
@@ -1027,23 +1209,19 @@ class _MainScreenState extends State<MainScreen> {
             String subtitle;
             switch (item) {
               case SettingsItem.client:
-                subtitle = 'Active: ${_currentConfig.clientName} (Press Space/Enter to toggle)';
+                subtitle = 'Active: ${_currentConfig.clientName}';
                 break;
               case SettingsItem.stagger:
-                subtitle = 'Active: ${_currentConfig.staggerDelayMs} ms (Press Space/Enter to cycle)';
+                subtitle = 'Active: ${_currentConfig.staggerDelayMs} ms';
                 break;
               case SettingsItem.rootPath:
                 subtitle = _currentConfig.rootPath;
                 break;
               case SettingsItem.obfuscate:
-                subtitle = _isObfuscated
-                    ? 'Active: ON (Account names & IPs masked, press Space/Enter to toggle)'
-                    : 'Active: OFF (Names & IPs visible, press Space/Enter to toggle)';
+                subtitle = _isObfuscated ? 'Active: ON' : 'Active: OFF';
                 break;
               case SettingsItem.autoStart:
-                subtitle = _currentConfig.autoStart
-                    ? 'Active: ON (--auto-start enabled, press Space/Enter to toggle)'
-                    : 'Active: OFF (--auto-start disabled, press Space/Enter to toggle)';
+                subtitle = _currentConfig.autoStart ? 'Active: ON' : 'Active: OFF';
                 break;
               case SettingsItem.back:
                 subtitle = 'Return to top-level menu';
@@ -1101,6 +1279,7 @@ class _MainScreenState extends State<MainScreen> {
         );
 
       case NavigationLevel.about:
+      case NavigationLevel.expandedStats:
         return const SizedBox();
     }
   }
@@ -1121,18 +1300,17 @@ class _MainScreenState extends State<MainScreen> {
           isFocused: false,
           child: _buildSettingsContent(),
         );
+      } else if (activeItem == TopMenuItem.about) {
+        return PaneBox(
+          title: 'ABOUT & CHANGELOG SUMMARY',
+          isFocused: false,
+          child: _buildAboutPreviewContent(),
+        );
       } else if (activeItem == TopMenuItem.stats) {
         final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
             ? _accounts[_focusedStatsAccountIndex]
             : (_accounts.isNotEmpty ? _accounts.first : null);
-        final accIndex = focusedAccount != null ? _accounts.indexWhere((a) => a.name == focusedAccount.name) : -1;
-        final titleName = focusedAccount != null
-            ? Obfuscator.obfuscateAccountName(
-                focusedAccount.name,
-                index: accIndex >= 0 ? accIndex : null,
-                enabled: _isObfuscated,
-              )
-            : '';
+        final titleName = focusedAccount != null ? _getAccountDisplayName(focusedAccount.name) : '';
         return PaneBox(
           title: focusedAccount != null ? 'ACCOUNT STATS: $titleName' : 'ACCOUNT STATS',
           isFocused: false,
@@ -1143,13 +1321,7 @@ class _MainScreenState extends State<MainScreen> {
       final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
           ? _accounts[_focusedStatsAccountIndex]
           : null;
-      final titleName = focusedAccount != null
-          ? Obfuscator.obfuscateAccountName(
-              focusedAccount.name,
-              index: _focusedStatsAccountIndex,
-              enabled: _isObfuscated,
-            )
-          : '';
+      final titleName = focusedAccount != null ? _getAccountDisplayName(focusedAccount.name) : '';
       return PaneBox(
         title: focusedAccount != null ? 'ACCOUNT STATS: $titleName' : 'ACCOUNT STATS',
         isFocused: false,
@@ -1191,7 +1363,7 @@ class _MainScreenState extends State<MainScreen> {
     if (_selectedQueue.isEmpty) {
       return const Center(
         child: Text(
-          'Launch queue is empty.\nDrill into Accounts and select configs with Space.',
+          'Launch queue is empty.\nDig into Accounts and select configs with Space.',
           style: LawnchairTheme.footerDesc,
           textAlign: TextAlign.center,
         ),
@@ -1205,11 +1377,7 @@ class _MainScreenState extends State<MainScreen> {
         final session = _processTracker.getSession(target.account.name);
         final badge = session != null ? '[RUNNING: ${session.formattedUptime} | PID: ${session.pid}]' : null;
 
-        final displayName = Obfuscator.obfuscateAccountName(
-          target.account.name,
-          index: _accounts.indexWhere((a) => a.name == target.account.name),
-          enabled: _isObfuscated,
-        );
+        final displayName = _getAccountDisplayName(target.account.name);
 
         return ListItemRow(
           title: displayName,
@@ -1222,7 +1390,7 @@ class _MainScreenState extends State<MainScreen> {
           onTap: () {
             setState(() {
               _selectedQueue.removeAt(index);
-              _setStatus('Removed "${target.displayName}" from queue.');
+              _setStatus('Removed "${_getTargetDisplayName(target)}" from queue.');
             });
           },
         );
@@ -1233,26 +1401,30 @@ class _MainScreenState extends State<MainScreen> {
   Component _buildHotkeysContent() {
     return Container(
       padding: const EdgeInsets.all(1),
-      child: ListView(
-        children: [
-          const Text('Navigation Controls:', style: LawnchairTheme.titleStyle),
-          const SizedBox(height: 1),
-          _hotkeyRow('↑ / ↓', 'Move focus cursor up or down'),
-          _hotkeyRow('Enter', 'Open menu item / Drill into account / Toggle config'),
-          _hotkeyRow('Space', 'Toggle config into / out of launch queue'),
-          _hotkeyRow('Backspace', 'Return to previous level (Configs -> Accounts -> Top Menu)'),
-          const SizedBox(height: 1),
-          const Divider(),
-          const SizedBox(height: 1),
-          const Text('Global Actions:', style: LawnchairTheme.titleStyle),
-          const SizedBox(height: 1),
-          _hotkeyRow('R', 'Launch all queued accounts sequentially'),
-          _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
-          _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
-          _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
-          _hotkeyRow('Q', 'Quit Astra Lawnchair from anywhere'),
-          _hotkeyRow('Mouse Tap', 'Click any row to focus, open, or toggle'),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Navigation Controls:', style: LawnchairTheme.titleStyle),
+            const SizedBox(height: 1),
+            _hotkeyRow('↑ / ↓', 'Move focus cursor up or down'),
+            _hotkeyRow('Enter', 'Open menu item / Dig into account / Toggle config'),
+            _hotkeyRow('Space', 'Toggle config into / out of launch queue'),
+            _hotkeyRow('Backspace', 'Return to previous level (Configs -> Accounts -> Top Menu)'),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text('Global Actions:', style: LawnchairTheme.titleStyle),
+            const SizedBox(height: 1),
+            _hotkeyRow('R', 'Launch all queued accounts sequentially'),
+            _hotkeyRow('S', 'Hot-swap or reload focused config for bot instantly'),
+            _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
+            _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
+            _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
+            _hotkeyRow('Q', 'Quit Astra Lawnchair from anywhere'),
+            _hotkeyRow('Mouse Tap', 'Click any row to focus, open, or toggle'),
+          ],
+        ),
       ),
     );
   }
@@ -1260,23 +1432,102 @@ class _MainScreenState extends State<MainScreen> {
   Component _buildSettingsContent() {
     return Container(
       padding: const EdgeInsets.all(1),
-      child: ListView(
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Current Settings:', style: LawnchairTheme.titleStyle),
+            const SizedBox(height: 1),
+            _settingRow('Root Path', _currentConfig.rootPath),
+            _settingRow('Configs Storage', 'configs/ (JSON caches and settings)'),
+            _settingRow('Launch Stagger', '${_currentConfig.staggerDelayMs} ms'),
+            _settingRow('Client Parameter', _currentConfig.clientName),
+            _settingRow('Run Hotkey', _currentConfig.runHotkey),
+            _settingRow('Obfuscate Mode', _isObfuscated ? 'Enabled (ON)' : 'Disabled (OFF)'),
+            _settingRow('Auto-Start Bot', _currentConfig.autoStart ? 'Enabled (ON: --auto-start)' : 'Disabled (OFF)'),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text(
+              'Press Enter on "Settings" in the main menu to edit these values interactively.',
+              style: LawnchairTheme.footerDesc,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _buildAboutPreviewContent() {
+    return Container(
+      padding: const EdgeInsets.all(1),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: const [
+                Text('Astra Lawnchair ', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('v0.1.4', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Spacer(),
+                Text('by Joshh3ro', style: LawnchairTheme.footerDesc),
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Text(
+              'Terminal Launcher & Telemetry Dashboard for AstraBot',
+              style: LawnchairTheme.itemNormal,
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text(
+              'Latest Updates (v0.1.4):',
+              style: LawnchairTheme.statSectionHeader,
+            ),
+            const SizedBox(height: 1),
+            _changelogPreviewBullet('Full-Screen Expanded Stats', 'ASCII graphs & multi-column loot breakdown'),
+            _changelogPreviewBullet('Horizontal Velocity Meters', 'Clear proportional currency & velocity bars'),
+            _changelogPreviewBullet('Interactive Graph Toggles', 'Keys [1-4] toggle currency visibility live'),
+            _changelogPreviewBullet('Loot Categorization', 'Trinity, ammo, resources & minerals sorted'),
+            _changelogPreviewBullet('Auto-Start Bot Support', 'AstraBot execution via --auto-start config'),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text(
+              'Recent Release History:',
+              style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 1),
+            _changelogPreviewBullet('v0.1.3', 'About changelog tab, duplicate bot filter, Streamer mode'),
+            _changelogPreviewBullet('v0.1.2', 'Live account telemetry, incremental log reader, kill hotkey'),
+            _changelogPreviewBullet('v0.1.1', 'Settings editor, process tracking, stagger delays'),
+            const SizedBox(height: 1),
+            const Text(
+              'Press Enter on "About" to view the full changelog.',
+              style: LawnchairTheme.footerDesc,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _changelogPreviewBullet(String title, String desc) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Current Settings:', style: LawnchairTheme.titleStyle),
-          const SizedBox(height: 1),
-          _settingRow('Root Path', _currentConfig.rootPath),
-          _settingRow('Configs Storage', 'configs/ (JSON caches and settings)'),
-          _settingRow('Launch Stagger', '${_currentConfig.staggerDelayMs} ms'),
-          _settingRow('Client Parameter', _currentConfig.clientName),
-          _settingRow('Run Hotkey', _currentConfig.runHotkey),
-          _settingRow('Obfuscate Mode', _isObfuscated ? 'Enabled (ON)' : 'Disabled (OFF)'),
-          _settingRow('Auto-Start Bot', _currentConfig.autoStart ? 'Enabled (ON: --auto-start)' : 'Disabled (OFF)'),
-          const SizedBox(height: 1),
-          const Divider(),
-          const SizedBox(height: 1),
-          const Text(
-            'Press Enter on "Settings" in the main menu to edit these values interactively.',
-            style: LawnchairTheme.footerDesc,
+          Row(
+            children: [
+              const Text('• ', style: LawnchairTheme.footerKey),
+              Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Text(desc, style: LawnchairTheme.footerDesc),
           ),
         ],
       ),
@@ -1314,38 +1565,38 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Component _buildRunningSessionContent(RunningSession session) {
-    final accountDisplayName = Obfuscator.obfuscateAccountName(
-      session.accountName,
-      index: _accounts.indexWhere((a) => a.name == session.accountName),
-      enabled: _isObfuscated,
-    );
+    final accountDisplayName = _getAccountDisplayName(session.accountName);
 
     return Container(
       padding: const EdgeInsets.all(1),
-      child: ListView(
-        children: [
-          const Text('Active Process Information:', style: LawnchairTheme.titleStyle),
-          const SizedBox(height: 1),
-          _settingRow('Account', accountDisplayName),
-          _settingRow('Config Name', session.configName),
-          _settingRow('Process ID (PID)', '${session.pid}'),
-          _settingRow('Uptime', session.formattedUptime),
-          _settingRow('Started At', session.startTime.toLocal().toString().split('.').first),
-          const SizedBox(height: 1),
-          const Divider(),
-          const SizedBox(height: 1),
-          const Text(
-            'Process Management:',
-            style: LawnchairTheme.titleStyle,
-          ),
-          const SizedBox(height: 1),
-          _hotkeyRow('K', 'Terminate this bot process (kill tree)'),
-          const SizedBox(height: 1),
-          const Text(
-            'Press K while focused on this account to stop the bot and free resources.',
-            style: LawnchairTheme.footerDesc,
-          ),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Active Process Information:', style: LawnchairTheme.titleStyle),
+            const SizedBox(height: 1),
+            _settingRow('Account', accountDisplayName),
+            _settingRow('Config Name', session.configName),
+            _settingRow('Process ID (PID)', '${session.pid}'),
+            _settingRow('Uptime', session.formattedUptime),
+            _settingRow('Started At', session.startTime.toLocal().toString().split('.').first),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text(
+              'Process Management:',
+              style: LawnchairTheme.titleStyle,
+            ),
+            const SizedBox(height: 1),
+            _hotkeyRow('S', 'Hot-swap or reload running config instantly'),
+            _hotkeyRow('K', 'Terminate this bot process (kill tree)'),
+            const SizedBox(height: 1),
+            const Text(
+              'Press S to hot-swap/reload, or K while focused on this account to stop the bot and free resources.',
+              style: LawnchairTheme.footerDesc,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1425,9 +1676,241 @@ class _MainScreenState extends State<MainScreen> {
             const Text('Items & Materials Collected:', style: LawnchairTheme.statSectionHeader),
             if (items.isEmpty)
               const Text('No special items collected in this session yet.', style: LawnchairTheme.footerDesc)
-            else
-              for (final entry in items.entries)
-                _statRow(entry.key, '+${NumberFormatter.formatNumber(entry.value)}'),
+            else ...[
+              for (final (index, catEntry) in ItemClassifier.categorizeItems(items).entries.indexed) ...[
+                if (index > 0) const Divider(),
+                Text('• ${catEntry.key.label}:', style: LawnchairTheme.statSubSectionHeader),
+                for (final itemEntry in catEntry.value.entries)
+                  _statRow(itemEntry.key, '+${NumberFormatter.formatNumber(itemEntry.value)}'),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _expandedStatsTitle() {
+    final account = _activeAccount;
+    if (account == null) return 'EXPANDED TELEMETRY';
+    final displayName = _getAccountDisplayName(account.name);
+    return 'EXPANDED TELEMETRY & LIVE CHARTS: $displayName';
+  }
+
+  Component _buildExpandedStatsContent() {
+    final account = _activeAccount;
+    if (account == null) {
+      return const Center(
+        child: Text(
+          'No account selected. Press Backspace to return.',
+          style: LawnchairTheme.footerDesc,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final stats = _statTracker.getStats(account.name);
+    final session = _processTracker.getSession(account.name);
+    final isRunning = session != null;
+    final statusText = isRunning ? 'RUNNING (PID: ${session.pid})' : 'STOPPED';
+    final statusColor = isRunning ? LawnchairTheme.statusRunning : LawnchairTheme.footerDesc;
+
+    final uriFormatted = NumberFormatter.formatNumber(stats?.uridium ?? 0);
+    final credFormatted = NumberFormatter.formatNumber(stats?.credits ?? 0);
+    final xpFormatted = NumberFormatter.formatNumber(stats?.experience ?? 0);
+    final honorFormatted = NumberFormatter.formatNumber(stats?.honor ?? 0);
+
+    final uriRate = NumberFormatter.formatRate(stats?.uridiumPerHour ?? 0.0);
+    final credRate = NumberFormatter.formatRate(stats?.creditsPerHour ?? 0.0);
+    final xpRate = NumberFormatter.formatRate(stats?.experiencePerHour ?? 0.0);
+    final honorRate = NumberFormatter.formatRate(stats?.honorPerHour ?? 0.0);
+
+    final history = stats?.currencyHistory ?? [];
+    final uriSeries = history.map((s) => s.uridium).toList();
+    final credSeries = history.map((s) => s.credits).toList();
+    final xpSeries = history.map((s) => s.experience).toList();
+    final honorSeries = history.map((s) => s.honor).toList();
+
+    // Fallback single data point if no history exists yet
+    if (uriSeries.isEmpty) uriSeries.add(stats?.uridium ?? 0);
+    if (credSeries.isEmpty) credSeries.add(stats?.credits ?? 0);
+    if (xpSeries.isEmpty) xpSeries.add(stats?.experience ?? 0);
+    if (honorSeries.isEmpty) honorSeries.add(stats?.honor ?? 0);
+
+    final items = stats?.itemsGained ?? {};
+    final categorized = ItemClassifier.categorizeItems(items);
+
+    final ammoItems = (categorized[ItemCategory.ammo] ?? {}).entries.toList();
+    final resourceItems = (categorized[ItemCategory.resource] ?? {}).entries.toList();
+    final trinityItems = (categorized[ItemCategory.trinity] ?? {}).entries.toList();
+    final otherItems = (categorized[ItemCategory.other] ?? {}).entries.toList();
+
+    final combinedOther = [...trinityItems, ...otherItems];
+
+    return SingleChildScrollView(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top Summary Bar
+            Row(
+              children: [
+                const Text('Status: ', style: LawnchairTheme.footerKey),
+                Text(statusText, style: statusColor),
+                const SizedBox(width: 2),
+                const Text('Uptime: ', style: LawnchairTheme.footerKey),
+                Text(
+                  stats?.formattedUptime ?? (session?.formattedUptime ?? '0s'),
+                  style: LawnchairTheme.statValueHighlight,
+                ),
+                const SizedBox(width: 2),
+                const Text('Map: ', style: LawnchairTheme.footerKey),
+                Text(stats?.currentMap ?? 'Unknown', style: LawnchairTheme.statValueHighlight),
+                const SizedBox(width: 2),
+                const Text('Deaths: ', style: LawnchairTheme.footerKey),
+                Text(
+                  NumberFormatter.formatNumber(stats?.deathCount ?? 0),
+                  style: (stats?.deathCount ?? 0) > 0 ? LawnchairTheme.statDeathWarning : LawnchairTheme.statValueHighlight,
+                ),
+                const Spacer(),
+                const Text('[Backspace: Return to Stats]', style: LawnchairTheme.footerDesc),
+              ],
+            ),
+            const Divider(),
+
+            // Section: Unified Live Currency & Progression Chart
+            AsciiChart(
+              title: 'LIVE PROGRESSION GRAPH',
+              height: 4,
+              series: [
+                ChartSeries(
+                  id: 'uridium',
+                  label: 'Uridium',
+                  values: uriSeries,
+                  color: Colors.cyan,
+                  currentFormatted: '+$uriFormatted',
+                  rateFormatted: '+$uriRate/h',
+                  isVisible: _showChartUridium,
+                ),
+                ChartSeries(
+                  id: 'credits',
+                  label: 'Credits',
+                  values: credSeries,
+                  color: Colors.yellow,
+                  currentFormatted: '+$credFormatted',
+                  rateFormatted: '+$credRate/h',
+                  isVisible: _showChartCredits,
+                ),
+                ChartSeries(
+                  id: 'xp',
+                  label: 'Experience',
+                  values: xpSeries,
+                  color: Colors.magenta,
+                  currentFormatted: '+$xpFormatted',
+                  rateFormatted: '+$xpRate/h',
+                  isVisible: _showChartXp,
+                ),
+                ChartSeries(
+                  id: 'honor',
+                  label: 'Honor',
+                  values: honorSeries,
+                  color: Colors.green,
+                  currentFormatted: '+$honorFormatted',
+                  rateFormatted: '+$honorRate/h',
+                  isVisible: _showChartHonor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+
+            // Section: Categorized Loot Columns
+            // [Ammo & rockets], [Resources], [Other]
+            const Text('COLLECTED REWARDS & MATERIALS:', style: LawnchairTheme.statSectionHeader),
+            const SizedBox(height: 1),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Column 1: Ammo & Rockets
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Ammunition & Rockets',
+                          style: LawnchairTheme.statSubSectionHeader,
+                        ),
+                        const Divider(),
+                        if (ammoItems.isEmpty)
+                          const Text('None collected', style: LawnchairTheme.footerDesc)
+                        else
+                          for (final entry in ammoItems)
+                            _statRow(entry.key, '+${NumberFormatter.formatNumber(entry.value)}'),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+
+                // Column 2: Resources & Minerals
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Resources & Minerals',
+                          style: LawnchairTheme.statSubSectionHeader,
+                        ),
+                        const Divider(),
+                        if (resourceItems.isEmpty)
+                          const Text('None collected', style: LawnchairTheme.footerDesc)
+                        else
+                          for (final entry in resourceItems)
+                            _statRow(entry.key, '+${NumberFormatter.formatNumber(entry.value)}'),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+
+                // Column 3: Trinity Trials & Other Items
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Trinity & Other',
+                          style: LawnchairTheme.statSubSectionHeader,
+                        ),
+                        const Divider(),
+                        if (combinedOther.isEmpty)
+                          const Text('None collected', style: LawnchairTheme.footerDesc)
+                        else
+                          for (final entry in combinedOther)
+                            _statRow(entry.key, '+${NumberFormatter.formatNumber(entry.value)}'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 1),
           ],
         ),
       ),
@@ -1511,8 +1994,11 @@ class _MainScreenState extends State<MainScreen> {
               version: 'V0.1.4 A (Latest Update)',
               date: '2026-09-13',
               highlights: [
+                'Full-Screen Expanded Telemetry & ASCII Charts: Press Enter on any account in Stats view to open a full-screen dashboard featuring live progression charts (Uridium, Credits, XP, Honor) and a multi-column loot breakdown.',
+                'Categorized Rewards & Loot Tables: Telemetry loot drops are now cleanly organized into specialized categories (Trinity Trials & Gear, Ammunition & Rockets, Resources & Minerals, and Other Items) with alphabetical sorting.',
                 'Auto-Start Launch Parameter (--auto-start): Added launch argument support instructing AstraBot instances to automatically run their assigned configuration upon startup.',
                 'Interactive Auto-Start Settings Toggle: Real-time toggle in Settings menu (Space/Enter) with instant persistence to lawnchair_config.json and live right-pane inspector display.',
+                'Complete Streamer Mode Anonymization: Guaranteed zero account leaks across all views, breadcrumbs, queue operations, launch progress, and process termination.',
               ],
             ),
             const SizedBox(height: 1),
@@ -1559,7 +2045,7 @@ class _MainScreenState extends State<MainScreen> {
               version: 'V0.1.1 A',
               date: '2026-09-11',
               highlights: [
-                'Hierarchical TUI Navigation: Revamped menu structure (Accounts, Stats, Hotkeys, Settings, Quit) with drill-down account configuration staging.',
+                'Hierarchical TUI Navigation: Revamped menu structure (Accounts, Stats, Hotkeys, Settings, Quit) with dig-in account configuration staging.',
                 'Interactive Settings Editor: In-app controls to adjust launch stagger delay (200-1000ms), client parameter (Unity/Flash), and root scan directory.',
                 'Process Tracking & PID Management: Detached process launch tracking, running badges, and \'K\' hotkey for clean process tree termination via taskkill.',
                 'Interactive Hyperlinks: Clickable footer repository link utilizing OSC 8 terminal escape sequences.',

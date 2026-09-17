@@ -1,4 +1,5 @@
 import 'account.dart';
+import '../utils/obfuscator.dart';
 
 class LaunchTarget {
   final Account account;
@@ -10,6 +11,15 @@ class LaunchTarget {
   });
 
   String get displayName => '${account.name} — "$configName"';
+
+  String getDisplayName({bool obfuscated = false, int? accountIndex}) {
+    final accName = Obfuscator.obfuscateAccountName(
+      account.name,
+      index: accountIndex,
+      enabled: obfuscated,
+    );
+    return '$accName — "$configName"';
+  }
 
   @override
   bool operator ==(Object other) =>

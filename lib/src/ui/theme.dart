@@ -101,4 +101,9 @@ class LawnchairTheme {
     color: Colors.yellow,
     fontWeight: FontWeight.bold,
   );
+
+  static const TextStyle statSubSectionHeader = TextStyle(
+    color: Colors.cyan,
+    fontWeight: FontWeight.bold,
+  );
 }

@@ -15,5 +15,6 @@ export 'src/ui/theme.dart';
 export 'src/ui/widgets/footer_bar.dart';
 export 'src/ui/widgets/list_item_row.dart';
 export 'src/ui/widgets/pane_box.dart';
+export 'src/utils/item_classifier.dart';
 export 'src/utils/number_formatter.dart';
 export 'src/utils/obfuscator.dart';

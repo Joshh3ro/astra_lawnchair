@@ -83,7 +83,7 @@ void main() {
       } catch (_) {}
     });
 
-    test('MainScreen navigates top menu, drills into configs, toggles queue, and pops back', () async {
+    test('MainScreen navigates top menu, digs into configs, toggles queue, and pops back', () async {
       const account1 = Account(
         name: 'AccountAlpha',
         folderPath: '/fake/alpha',
@@ -126,7 +126,7 @@ void main() {
         expect(tester.terminalState, containsText('AccountBeta'));
         expect(tester.terminalState, containsText('Launch queue is empty'));
 
-        // Press Enter to drill into AccountAlpha
+        // Press Enter to dig into AccountAlpha
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('MENU: AccountAlpha'));
         expect(tester.terminalState, containsText('PvP'));
@@ -243,17 +243,17 @@ void main() {
         await tester.sendKey(LogicalKey.arrowDown); // Obfuscate
         await tester.sendKey(LogicalKey.arrowDown); // Auto-Start Config
         expect(tester.terminalState, containsText('Auto-Start Config'));
-        expect(tester.terminalState, containsText('Active: ON (--auto-start enabled'));
+        expect(tester.terminalState, containsText('Active: ON'));
 
         // Toggle Auto-Start (ON -> OFF)
         await tester.sendKey(LogicalKey.space);
-        expect(tester.terminalState, containsText('Active: OFF (--auto-start'));
+        expect(tester.terminalState, containsText('Active: OFF'));
         reloaded = await configService.loadConfig();
         expect(reloaded!.autoStart, isFalse);
 
         // Toggle back (OFF -> ON)
         await tester.sendKey(LogicalKey.space);
-        expect(tester.terminalState, containsText('Active: ON (--auto-start'));
+        expect(tester.terminalState, containsText('Active: ON'));
         reloaded = await configService.loadConfig();
         expect(reloaded!.autoStart, isTrue);
 
@@ -279,6 +279,7 @@ void main() {
 [20:21:07] You received 100 uridium.
 [20:21:13] You received 5000 credits.
 [20:21:45] You received 5 Quantum Prism
+[20:21:50] You received 250 UCB-100
 ''');
 
       final statsAccount = Account(
@@ -291,7 +292,7 @@ void main() {
 
       await testNocterm(
         'stats view navigation and metrics test',
-        size: const Size(80, 30),
+        size: const Size(80, 45),
         (tester) async {
         await tester.pumpComponent(
           MainScreen(
@@ -320,8 +321,43 @@ void main() {
         expect(tester.terminalState, containsText('ACCOUNT STATS: StatsBotAccount'));
         expect(tester.terminalState, containsText('Uridium:'));
         expect(tester.terminalState, containsText('+100'));
+        expect(tester.terminalState, containsText('• Trinity Trials & Gear:'));
         expect(tester.terminalState, containsText('Quantum Prism:'));
-        expect(tester.terminalState, containsText('+5'));
+        // Press Enter to dig into full-screen expanded telemetry & live charts
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('EXPANDED TELEMETRY & LIVE CHARTS'));
+        expect(tester.terminalState, containsText('LIVE PROGRESSION GRAPH'));
+        expect(tester.terminalState, containsText('●[1] Uridium'));
+        expect(tester.terminalState, containsText('●[2] Credits'));
+        expect(tester.terminalState, containsText('●[3] Experience'));
+        expect(tester.terminalState, containsText('●[4] Honor'));
+        expect(tester.terminalState, containsText('Uridium:'));
+        expect(tester.terminalState, containsText('Credits:'));
+        expect(tester.terminalState, containsText('COLLECTED REWARDS & MATERIALS:'));
+        expect(tester.terminalState, containsText('Ammunition & Rockets'));
+        expect(tester.terminalState, containsText('Resources & Minerals'));
+        expect(tester.terminalState, containsText('Trinity & Other'));
+
+        // Press '1' to toggle Uridium chart off
+        await tester.sendKey(LogicalKey.digit1);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        expect(tester.terminalState, containsText('○[1] Uridium'));
+
+        // Press '1' again to toggle Uridium chart back on
+        await tester.sendKey(LogicalKey.digit1);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        expect(tester.terminalState, containsText('●[1] Uridium'));
+
+        // Backspace returns to split-pane Stats view
+        await tester.sendKey(LogicalKey.backspace);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        expect(tester.terminalState, containsText('TELEMETRY & STATS'));
 
         // Backspace returns to Top Menu
         await tester.sendKey(LogicalKey.backspace);
@@ -420,7 +456,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
 
-        // Initially in Top Menu, drill into Accounts
+        // Initially in Top Menu, dig into Accounts
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('SuperSecretAccount'));
         expect(tester.terminalState, isNot(containsText('[STREAMER MODE]')));
@@ -466,7 +502,7 @@ void main() {
       // Register active running session
       await processTracker.registerLaunch(
         const LaunchTarget(account: runningAccount, configName: 'StealthPvP'),
-        77889,
+        97889,
       );
 
       await testNocterm('running session obfuscation test', (tester) async {
@@ -493,23 +529,30 @@ void main() {
 
         // Running session badge is fully visible in left pane
         expect(tester.terminalState, containsText('RUNNING:'));
-        expect(tester.terminalState, containsText('77889'));
+        expect(tester.terminalState, containsText('97889'));
 
         // Right pane displays running bot status with masked account name but visible session metrics
-        expect(tester.terminalState, containsText('RUNNING BOT STATUS [PID: 77889]'));
+        expect(tester.terminalState, containsText('RUNNING BOT STATUS [PID: 97889]'));
         expect(tester.terminalState, containsText('Active Process Information:'));
         expect(tester.terminalState, containsText('Config Name:'));
         expect(tester.terminalState, containsText('StealthPvP'));
         expect(tester.terminalState, containsText('Process ID (PID):'));
-        expect(tester.terminalState, containsText('77889'));
+        expect(tester.terminalState, containsText('97889'));
         expect(tester.terminalState, containsText('Uptime:'));
 
-        // 2. Drill into configs
+        // 2. Dig into configs
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('MENU: Account #1 (1 configs)'));
+        expect(tester.terminalState, containsText('Viewing configs for "Account #1"'));
         expect(tester.terminalState, containsText('StealthPvP'));
         expect(tester.terminalState, containsText('RUNNING:'));
-        expect(tester.terminalState, containsText('77889'));
+        expect(tester.terminalState, containsText('97889'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
+
+        // Toggle queue with Space
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Added "Account #1 — "StealthPvP"" to launch queue.'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
 
         // Pop back to Accounts, then Top Menu
         await tester.sendKey(LogicalKey.backspace);
@@ -525,11 +568,35 @@ void main() {
         expect(tester.terminalState, containsText('TELEMETRY & STATS'));
         expect(tester.terminalState, containsText('Account #1'));
         expect(tester.terminalState, containsText('RUNNING:'));
-        expect(tester.terminalState, containsText('77889'));
+        expect(tester.terminalState, containsText('97889'));
 
         // Stats right pane details has RUNNING status and PID
         expect(tester.terminalState, containsText('ACCOUNT STATS: Account #1'));
-        expect(tester.terminalState, containsText('RUNNING (PID: 77889)'));
+        expect(tester.terminalState, containsText('RUNNING (PID: 97889)'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
+
+        // 4. Dig into Expanded Telemetry & Live Charts
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('EXPANDED TELEMETRY & LIVE CHARTS: Account #1'));
+        expect(tester.terminalState, containsText('Expanded Telemetry: "Account #1"'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
+
+        // Pop back to Stats view, then pop back to Accounts
+        await tester.sendKey(LogicalKey.backspace);
+        await tester.sendKey(LogicalKey.backspace);
+        await tester.sendKey(LogicalKey.arrowUp); // Accounts
+        await tester.sendKey(LogicalKey.enter);
+
+        // 5. Terminate bot with 'K' hotkey while obfuscated
+        await tester.sendKey(LogicalKey.keyK);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('Terminated bot for "Account #1"'));
+        expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
       });
     });
 
@@ -582,7 +649,7 @@ void main() {
         await tester.sendKey(LogicalKey.enter);
         expect(tester.terminalState, containsText('MENU: Accounts [2]'));
 
-        // Drill into RunningBot and queue 'PvP'
+        // Dig into RunningBot and queue 'PvP'
         await tester.sendKey(LogicalKey.enter);
         await tester.sendKey(LogicalKey.space);
         expect(tester.terminalState, containsText('Added "RunningBot — "PvP"" to launch queue.'));
@@ -590,7 +657,7 @@ void main() {
         // Pop back to Accounts
         await tester.sendKey(LogicalKey.backspace);
 
-        // Move down to IdleBot, drill in, and queue 'Farming'
+        // Move down to IdleBot, dig in, and queue 'Farming'
         await tester.sendKey(LogicalKey.arrowDown);
         await tester.sendKey(LogicalKey.enter);
         await tester.sendKey(LogicalKey.space);
@@ -613,7 +680,7 @@ void main() {
 
         // 2. Now queue RunningBot again and trigger 'R' when ALL queued accounts are running
         await tester.sendKey(LogicalKey.arrowUp); // Focus RunningBot
-        await tester.sendKey(LogicalKey.enter); // Drill in
+        await tester.sendKey(LogicalKey.enter); // Dig in
         await tester.sendKey(LogicalKey.space); // Queue PvP
         await tester.sendKey(LogicalKey.backspace); // Pop back
 
@@ -636,7 +703,7 @@ void main() {
 
       await testNocterm(
         'about tab navigation and changelog test',
-        size: const Size(80, 30),
+        size: const Size(80, 40),
         (tester) async {
         await tester.pumpComponent(
           MainScreen(
@@ -663,6 +730,11 @@ void main() {
         // Verify About is now visible and focused
         expect(tester.terminalState, containsText('About'));
 
+        // Verify right pane displays preview of changelog before digging in
+        expect(tester.terminalState, containsText('ABOUT & CHANGELOG SUMMARY'));
+        expect(tester.terminalState, containsText('Latest Updates (v0.1.4):'));
+        expect(tester.terminalState, containsText('Full-Screen Expanded Stats'));
+
         // Open About tab
         await tester.sendKey(LogicalKey.enter);
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -683,6 +755,135 @@ void main() {
 
         expect(tester.terminalState, containsText('MENU: Astra Lawnchair'));
         expect(tester.terminalState, containsText('Accounts (0 accounts)'));
+      });
+    });
+
+    test('MainScreen hot-swaps running bot config using S key', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+      );
+
+      const runningAccount = Account(
+        name: 'ActiveBotAccount',
+        folderPath: 'C:\\bots\\ActiveBotAccount',
+        exePath: 'C:\\bots\\ActiveBotAccount\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP', 'Farming'],
+      );
+
+      // Pre-register active session with 'Farming' (mock PID 95555)
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: runningAccount, configName: 'Farming'),
+        95555,
+      );
+
+      await testNocterm('hot-swap config test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: [runningAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [1]'));
+
+        // Dig into configs for ActiveBotAccount
+        await tester.sendKey(LogicalKey.enter);
+        await tester.pump();
+        expect(tester.terminalState, containsText('MENU: ActiveBotAccount (2 configs)'));
+
+        // Focused on 'PvP' (index 0). The bot is currently running 'Farming'.
+        // Press 'S' to hot-swap to PvP
+        await tester.sendKey(LogicalKey.keyS);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Verify status message confirms switch and PID
+        expect(tester.terminalState, containsText('Switched "ActiveBotAccount" to config "PvP"'));
+        expect(tester.terminalState, containsText('99999'));
+
+        // Verify process tracker session was updated
+        final session = processTracker.getSession('ActiveBotAccount');
+        expect(session, isNotNull);
+        expect(session!.configName, 'PvP');
+        expect(session.pid, 99999);
+
+        // Now press 'S' again while on 'PvP' to reload the same config
+        await tester.sendKey(LogicalKey.keyS);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        expect(tester.terminalState, containsText('Reloaded "ActiveBotAccount" with config "PvP"'));
+      });
+    });
+
+    test('MainScreen hot-swaps config with obfuscation enabled without leaking account name', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 400,
+        obfuscateNames: true,
+      );
+
+      const runningAccount = Account(
+        name: 'SuperSecretUser',
+        folderPath: 'C:\\bots\\SuperSecretUser',
+        exePath: 'C:\\bots\\SuperSecretUser\\AstraBot.exe',
+        datPath: '',
+        configs: ['ConfigA', 'ConfigB'],
+      );
+
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: runningAccount, configName: 'ConfigA'),
+        95555,
+      );
+
+      await testNocterm('obfuscated hot-swap test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: [runningAccount],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        // Dig into configs
+        await tester.sendKey(LogicalKey.enter);
+        await tester.pump();
+
+        // Move to ConfigB (arrow down)
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.pump();
+
+        // Press 'S' to hot-swap
+        await tester.sendKey(LogicalKey.keyS);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Check that real name 'SuperSecretUser' is never printed in terminal
+        expect(tester.terminalState, isNot(containsText('SuperSecretUser')));
+        expect(tester.terminalState, containsText('Switched "Account #1" to config "ConfigB"'));
       });
     });
   });

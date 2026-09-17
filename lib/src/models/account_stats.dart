@@ -1,3 +1,35 @@
+class CurrencySnapshot {
+  final DateTime timestamp;
+  final int uridium;
+  final int credits;
+  final int experience;
+  final int honor;
+
+  const CurrencySnapshot({
+    required this.timestamp,
+    required this.uridium,
+    required this.credits,
+    required this.experience,
+    required this.honor,
+  });
+
+  Map<String, dynamic> toJson() => {
+        't': timestamp.toIso8601String(),
+        'u': uridium,
+        'c': credits,
+        'x': experience,
+        'h': honor,
+      };
+
+  factory CurrencySnapshot.fromJson(Map<String, dynamic> json) => CurrencySnapshot(
+        timestamp: DateTime.tryParse(json['t'] as String? ?? '') ?? DateTime.now(),
+        uridium: json['u'] as int? ?? 0,
+        credits: json['c'] as int? ?? 0,
+        experience: json['x'] as int? ?? 0,
+        honor: json['h'] as int? ?? 0,
+      );
+}
+
 class AccountStats {
   final String accountName;
   final DateTime? sessionStart;
@@ -23,6 +55,9 @@ class AccountStats {
   // Loot items (e.g. Quantum Prism, Xyralith, etc.)
   final Map<String, int> itemsGained;
 
+  // Historical snapshots for sparkline graphs (capped to recent samples)
+  final List<CurrencySnapshot> currencyHistory;
+
   const AccountStats({
     required this.accountName,
     this.sessionStart,
@@ -41,6 +76,7 @@ class AccountStats {
     this.lastDeathMap,
     this.lastDeathTime,
     this.itemsGained = const {},
+    this.currencyHistory = const [],
   });
 
   // Dynamic rates per hour
@@ -99,6 +135,7 @@ class AccountStats {
     String? lastDeathMap,
     DateTime? lastDeathTime,
     Map<String, int>? itemsGained,
+    List<CurrencySnapshot>? currencyHistory,
   }) {
     return AccountStats(
       accountName: accountName ?? this.accountName,
@@ -118,6 +155,7 @@ class AccountStats {
       lastDeathMap: lastDeathMap ?? this.lastDeathMap,
       lastDeathTime: lastDeathTime ?? this.lastDeathTime,
       itemsGained: itemsGained ?? this.itemsGained,
+      currencyHistory: currencyHistory ?? this.currencyHistory,
     );
   }
 
@@ -140,6 +178,7 @@ class AccountStats {
       'lastDeathMap': lastDeathMap,
       'lastDeathTime': lastDeathTime?.toIso8601String(),
       'itemsGained': itemsGained,
+      'currencyHistory': currencyHistory.map((s) => s.toJson()).toList(),
     };
   }
 
@@ -165,6 +204,10 @@ class AccountStats {
             (k, v) => MapEntry(k, v as int),
           ) ??
           const {},
+      currencyHistory: (json['currencyHistory'] as List<dynamic>?)
+              ?.map((e) => CurrencySnapshot.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 }

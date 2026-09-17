@@ -1,11 +1,71 @@
 ## V0.1.4 A
 
+- Automated Bot Configuration Hot-Swapping & Reloading (`S` Hotkey)
+    > Instant in-place bot configuration switching and reloading without manual kill-queue-run steps
+    - **One-Key Hot-Swap**: Press `S` while focused on any config in the Configs menu to instantly terminate the active AstraBot process, wait until process handles are confirmed closed in the OS, sync the target configuration over `config.json` in the account root folder, and launch AstraBot with the new `--config "<name>"` parameter
+    - **Guaranteed Config Synchronization**: Copies `configs/<name>.json` directly to `config.json` in the account directory before launch, ensuring AstraBot reliably boots with the chosen configuration profile
+    - **Process Death Verification**: Confirms the previous bot PID is fully terminated before spawning the new instance, preventing dual-instance conflicts or config overwrites on exit
+    - **Smart Accounts Screen Action**: Pressing `S` on an account in the Accounts list switches to any staged configuration in the launch queue, or automatically digs into the account's configs list for immediate selection
+    - **Full Obfuscation Support**: Emits masked status notifications (`Switched "Account #1" to config "PvP" (PID: ...)`) ensuring zero account name exposures in streamer mode
+    - **UI & Hotkey Guidance**: Added `S: switch` to the footer bar, updated status prompts, and documented hotkey controls in the Hotkeys and Running Session panels
+
+- Full-Screen Expanded Account Stats Dashboard & Unified Interactive ASCII Chart
+    > Drill-down telemetry visualizer with single unified progression chart, series toggling, and multi-column loot breakdown
+    - **Drill-down Navigation**: Press `Enter` on any account in the `Stats` menu to open a dedicated full-screen telemetry workspace (`NavigationLevel.expandedStats`), and `Backspace` to return
+    - **Unified Multi-Series Interactive Chart**: Replaced split 2x2 sparkline grids with a full-width progression visualizer plotting:
+        - **[1] Uridium** (Cyan)
+        - **[2] Credits** (Yellow)
+        - **[3] Experience** (Magenta)
+        - **[4] Honor** (Green)
+    - **Interactive Keyboard Toggles**: Press hotkeys `1`, `2`, `3`, or `4` when in expanded stats to toggle visibility of individual currency series dynamically with instant status notifications
+    - **Clean Horizontal Currency & Velocity Bar Gauges**: Replaced cluttered line graphs with high-contrast, proportional horizontal bar meters (`██████░░░░`). Each active metric displays its hotkey index, current earnings, solid colored progress bar, and hourly rate formatted with crystal-clear alignment
+    - **Compact Header Chips & Footers**: Clean status indicators `●[1] Uridium`, `○[2] Credits` showing active state and hotkey hints within 80-column terminal bounds
+    - **Multi-Column Loot Organization**: Three side-by-side bordered panels below the graphs:
+        - `[Ammunition & Rockets]`
+        - `[Resources & Minerals]`
+        - `[Trinity & Other]`
+    - **On-Demand Performance**: Heavy rendering and snapshot tracking are activated only when viewing expanded stats, keeping standard polling fast and lightweight
+
+- Categorized Rewards & Loot Tables
+    > Organized telemetry item drops into structured, alphabetical categories
+    - Introduced `ItemClassifier` and `ItemCategory` system for mapping DarkOrbit loot items
+    - Dedicated categories:
+        - **Trinity Trials & Gear**: Quantum Prism, Xyralith, Trinity Token, OS Modules, Refractors, and Particle Cannons (Helios, Nidhogg, Indra across Common to Ultimate rarities)
+        - **Ammunition & Rockets**: Specified laser ammo (UCB-100, RSB-75, LCB-10, MCB-25/50, SAB-50, CBO-100, JOB-100, RB-214, PIB-100, RCB-140, IDB-125, VB-142, EMAA-20, SBL-100, A-BL, CC-A..Z) and rocket types (R-310, PLT-2026/2021/3030, BDR-1211/1212, DCR-250, PLD-8, R-IC3, RC-100, SR-5, HSTRM-01, UBR-100)
+        - **Resources & Minerals**: Ore, crafting materials, and hardware (Prometium, Prometid, Duranium, Promerium, Seprom, Palladium, Rinusk, Scrap, Mucosum, Diametrion, Log Disk, Booty Key, etc.)
+        - **Other Collected Items**: Fallback bucket for general event items and uncategorized drops
+    - Clean display filtering: Only categories with non-zero collected items are rendered
+    - Items within each category are automatically sorted alphabetically
+    - Distinct Cyan subheader styling (`statSubSectionHeader`) for clear visual grouping in Section 4
+
 - `--auto-start` Launch Parameter Support
     > Automatically start bot execution upon process launch
     - Added support for `--auto-start` CLI argument in LauncherService
     - Added `autoStart` property (default: `true`) to AppConfig and serialized in JSON configs
     - Added interactive toggle in Settings menu (`Auto-Start Config: ON / OFF`)
     - Displays current Auto-Start status in the Settings inspection panel
+
+- Top Menu "About" Changelog Preview
+    > Contextual summary on the right pane before digging into the full view
+    - Displays `ABOUT & CHANGELOG SUMMARY` in the right pane when hovering over "About" in the main menu
+    - Highlights current version, key v0.1.4 features, recent release tags, and dig-in instruction
+
+- Nocterm Layout Stability Fix
+    > Solved element assertion crash during eager layout passes
+    - Refactored right-pane inspector cards (`About`, `Settings`, `Hotkeys`, `Running Bot Status`) to `SingleChildScrollView` with `Column`
+    - Resolves Nocterm `assert(newComponent != component)` failures when updating `const` child widgets
+
+- UI Copy & Menu Polish
+    > Replaced 'drill into' terminology and decluttered settings subtitles
+    - Standardized navigation wording to 'Dig into' across empty queue prompts, hotkey guides, and code methods
+    - Removed redundant inline `(Press Space/Enter to toggle/cycle)` strings next to settings items for a clean layout
+
+- Comprehensive Obfuscation & Leak Elimination
+    > Eliminated unmasked account name exposures across all views, queues, and status notifications
+    - Centralized account and launch target masking through `_getAccountDisplayName()` and `_getTargetDisplayName()`
+    - Eliminated raw account names in status messages when digging into configs, expanding stats, adding/removing launch queue items, reporting launch progress, and killing bot processes (`K`)
+    - Added `getDisplayName({bool obfuscated = false, int? accountIndex})` to `LaunchTarget`
+    - Added comprehensive automated test verifying zero account leaks across all views, statuses, and process termination under Obfuscation mode
 
 ## V0.1.3 A
 
