@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
 import '../../models/app_config.dart';
@@ -513,15 +512,6 @@ class _MainScreenState extends State<MainScreen> {
           waitedMs += 100;
         }
       }
-
-      // Sync targeted config file to config.json in account root directory
-      try {
-        final sourceConfigFile = File(p.join(account.folderPath, 'configs', '$configName.json'));
-        if (sourceConfigFile.existsSync()) {
-          final destConfigFile = File(p.join(account.folderPath, 'config.json'));
-          destConfigFile.writeAsBytesSync(sourceConfigFile.readAsBytesSync());
-        }
-      } catch (_) {}
 
       final launcher = LauncherService(
         staggerDelayMs: _currentConfig.staggerDelayMs,
