@@ -137,6 +137,38 @@ class StatTrackerService {
       current = await _parseConsoleLog(account.name, latestFiles.consoleLog!, current);
     }
 
+    // Record historical currency snapshot for sparklines (capped at 30 points)
+    final history = List<CurrencySnapshot>.from(current.currencyHistory);
+    final lastSnapshot = history.isNotEmpty ? history.last : null;
+    final now = DateTime.now();
+
+    final currenciesChanged = lastSnapshot == null ||
+        lastSnapshot.uridium != current.uridium ||
+        lastSnapshot.credits != current.credits ||
+        lastSnapshot.experience != current.experience ||
+        lastSnapshot.honor != current.honor;
+
+    // Record if values changed, or at least once every 30 seconds if running
+    final timeSinceLastSnapshot = lastSnapshot != null
+        ? now.difference(lastSnapshot.timestamp).inSeconds
+        : 999;
+
+    if (currenciesChanged || timeSinceLastSnapshot >= 30) {
+      history.add(
+        CurrencySnapshot(
+          timestamp: now,
+          uridium: current.uridium,
+          credits: current.credits,
+          experience: current.experience,
+          honor: current.honor,
+        ),
+      );
+      if (history.length > 30) {
+        history.removeAt(0);
+      }
+      current = current.copyWith(currencyHistory: history);
+    }
+
     _statsMap[account.name] = current;
     return current;
   }

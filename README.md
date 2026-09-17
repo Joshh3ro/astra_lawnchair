@@ -19,7 +19,7 @@ A Dart terminal UI (TUI) app, built with the **Nocterm** framework, that replace
 | Key | Action |
 |---|---|
 | `↑` / `↓` | Move focus up/down within current list |
-| `Enter` | Drill down into focused account's Config List |
+| `Enter` | Dig into focused account's Config List |
 | `Space` | Toggle focused item into / out of launch queue |
 | `Backspace` | Return from Config List to Account List |
 | `R` | Run all queued account/config pairs |

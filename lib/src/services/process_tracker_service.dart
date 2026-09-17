@@ -78,6 +78,7 @@ class ProcessTrackerService {
     );
 
     _activeSessions[target.account.name] = session;
+    _mockKilledPids.remove(pid);
     await saveSessions();
     return session;
   }
@@ -91,13 +92,15 @@ class ProcessTrackerService {
     await saveSessions();
   }
 
+  final Set<int> _mockKilledPids = {};
+
   /// Checks if a process is still alive in the operating system
   Future<bool> isProcessAlive(int pid) async {
     if (pid <= 0) return false;
 
     // Special mock PID range for unit testing / dry runs
     if (pid >= 90000 && pid <= 99999) {
-      return true;
+      return !_mockKilledPids.contains(pid);
     }
 
     try {
@@ -162,6 +165,7 @@ class ProcessTrackerService {
 
     // Test/Dry-run mock PIDs
     if (pid >= 90000 && pid <= 99999) {
+      _mockKilledPids.add(pid);
       return true;
     }
 

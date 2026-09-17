@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import '../models/launch_target.dart';
 
 class LaunchResult {
@@ -89,6 +90,15 @@ class LauncherService {
         pid: 99999,
       );
     }
+
+    // Ensure active config is synced to config.json in the account directory
+    try {
+      final sourceConfigFile = File(p.join(target.account.folderPath, 'configs', '${target.configName}.json'));
+      if (sourceConfigFile.existsSync()) {
+        final destConfigFile = File(p.join(target.account.folderPath, 'config.json'));
+        destConfigFile.writeAsBytesSync(sourceConfigFile.readAsBytesSync());
+      }
+    } catch (_) {}
 
     try {
       final process = await Process.start(

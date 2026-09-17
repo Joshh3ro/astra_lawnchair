@@ -50,7 +50,7 @@ class FooterBar extends StatelessComponent {
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(
-                    onTap: () => _openUrl('https://github.com/Joshh3ro/astra-lawnchair'),
+                    onTap: () => _openUrl('https://github.com/Joshh3ro/astra_lawnchair'),
                     child: const Text(
                       '(GitHub)',
                       style: LawnchairTheme.footerLink,
@@ -67,19 +67,21 @@ class FooterBar extends StatelessComponent {
           child: Row(
             children: [
               _keyItem('Space', 'select'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
               _keyItem('Enter', 'open'),
-              const SizedBox(width: 2),
-              _keyItem('Backspace', 'back'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
+              _keyItem('Bksp', 'back'),
+              const SizedBox(width: 1),
               _keyItem(runHotkey, 'run'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
               _keyItem('K', 'kill'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
+              _keyItem('S', 'switch'),
+              const SizedBox(width: 1),
               _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
               _keyItem('Shift+R', 'refresh'),
-              const SizedBox(width: 2),
+              const SizedBox(width: 1),
               _keyItem('Q', 'quit'),
             ],
           ),
@@ -92,7 +94,7 @@ class FooterBar extends StatelessComponent {
     return Row(
       children: [
         Text(key, style: LawnchairTheme.footerKey),
-        const Text(': ', style: LawnchairTheme.footerDesc),
+        const Text(':', style: LawnchairTheme.footerDesc),
         Text(desc, style: LawnchairTheme.footerDesc),
       ],
     );
