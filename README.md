@@ -1,6 +1,8 @@
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/cb95e2e2-1eab-47e8-9753-10b6b571423a" />
+
 # Astra Lawnchair
 
-*(A relaxed place to sit while your bots log in. Formerly known as "Astra Launcher.")*
+*(A relaxed place to sit while your bots log in. Formerly known as "Astra Launcher." ill probably be changing the name to "Astral Lawnchair")*
 
 [![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Joshh3ro/astra_lawnchair/releases/latest)
 
