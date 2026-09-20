@@ -10,7 +10,7 @@
 [![Stars](https://img.shields.io/github/stars/Joshh3ro/astra_lawnchair?style=flat-square&color=E3B341&logo=star)](https://github.com/Joshh3ro/astra_lawnchair/stargazers)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/Joshh3ro/astra_lawnchair)
 [![Dart](https://img.shields.io/badge/Dart-3.0+-0175C2?style=flat-square&logo=dart&logoColor=white)](https://dart.dev)
-[![Built with Nocterm](https://img.shields.io/badge/TUI-Nocterm-7928CA?style=flat-square)](https://github.com/Joshh3ro/nocterm)
+[![Built with Nocterm](https://img.shields.io/badge/TUI-Nocterm-7928CA?style=flat-square)](https://github.com/Norbert515/nocterm)
 
 A Dart terminal UI (TUI) app, built with the **Nocterm** framework, that replaces a folder full of hand-written `.bat` launcher files. It scans a directory of AstraBot account folders, lets the user pick one or more accounts and one or more configs per account, and launches all selected account/config combinations at once as detached processes with staggered intervals.
 
