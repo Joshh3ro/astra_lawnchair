@@ -1,61 +1,89 @@
 Astra Lawnchair Non-Commercial License
 
-Copyright (c) 2026 Joshh3ro
+Copyright (c) 2026 Joshua Sebastiano D. (GitHub: https://github.com/Joshh3ro
+LinkedIn: https://www.linkedin.com/in/joshua-sebastiano-d-9b740510b
+X: https://x.com/Josh_HeroTV)
 
-IMPORTANT: This is a custom source-available license, not an OSI-approved open-source license. If you need to use this software commercially, contact the copyright holder for written permission before doing so.
+This software and all associated files in this repository are the intellectual property of the original author, Joshua Sebastiano D. (GitHub: https://github.com/Joshh3ro).
 
-1. Grant of permission
+This license is intended to allow free use, study, modification, and sharing of the software for non-commercial purposes, while preventing the software or derivative works from being sold, used as a paid product/service, or otherwise commercially exploited without a separate written commercial license from the original author.
 
-Permission is granted to use, copy, study, modify, merge, publish, distribute, and share this software and modified versions for personal, educational, research, and other non-commercial purposes, subject to the terms below.
+This is a custom license. It is not an OSI-approved open-source license, and it is not a substitute for legal advice. If you are unsure about a use case, contact the original author before proceeding.
 
-2. Donations permitted
+1. Grant of Permission
 
-A person or organization may accept voluntary donations, tips, sponsorships, or grants in connection with maintaining, improving, documenting, or distributing this software or a modified fork, provided that:
+Permission is granted to use, copy, modify, merge, publish, distribute, and/or share this software and any modified versions for personal, educational, research, and non-commercial purposes, provided that the terms of this License are followed.
 
-- the donation is not required to obtain access to the software or a feature;
-- the software is not placed behind a paywall or fee-for-access system; and
-- the donation is not a disguised purchase price, subscription fee, license fee, or other payment for the software or access to it.
+2. Donations and Sponsor Support
 
-Accepting donations does not by itself make an otherwise permitted use commercial.
+Voluntary donations, tips, sponsorships, grants, or other similar support are permitted so long as:
 
-3. Commercial use prohibited without permission
+- they are optional and not required for access to the software or any feature;
+- the software is not placed behind a paywall, subscription, or fee-for-access system;
+- the software is not sold, licensed, rented, or otherwise offered as a paid product or service; and
+- the donation is not a disguised purchase price, commercial license fee, or other payment for access to the software itself.
 
-You may not, without prior written permission from the copyright holder:
+Accepting donations does not convert a non-commercial use into a commercial use. However, donations do not imply permission to commercialize the project or any derivative work.
 
-- sell, lease, rent, sublicense, or charge for access to this software or a modified version;
-- distribute this software as part of a paid product, subscription, hosted service, SaaS offering, or other commercial product or service;
-- use this software or a modified version to provide a paid service to customers or users;
-- use this software as a material component of a business, product, or service that is offered for compensation or primarily for commercial advantage; or
-- relicense this software under proprietary commercial terms.
+3. No Commercial Use Without Written Permission
 
-Commercial use includes use by a business to build, operate, or provide a revenue-generating product or service based on, incorporating, or materially depending on this software. Internal business use is also commercial when the software is used as part of the business's revenue-generating operations or commercial offering.
+Without the prior written permission of the original author, you may not:
 
-4. Commercial license
+- sell, lease, rent, sublicense, or otherwise commercialize this software or any modified version of it;
+- bundle this software or any modified version into a paid product, subscription, hosted service, SaaS offering, or other revenue-generating service;
+- use this software as a core component of a business product or service offered for compensation;
+- use this software to provide consulting, hosting, or support services for a fee where the software or a derivative work is a material part of the service;
+- distribute the software under proprietary commercial terms; or
+- otherwise use the software in a way that is primarily commercial in nature.
 
-Commercial use is allowed only with a separate written commercial license from the copyright holder. A commercial license may require a fee, royalties, revenue share, attribution, reporting, or other terms agreed in writing by the parties. No commercial rights are granted unless and until those terms are agreed in a signed written license or other written authorization from the copyright holder.
+This prohibition applies to both direct and indirect commercial use, including use by businesses, organizations, and partnerships.
 
-5. Modified versions and attribution
+4. Business Use and Internal Operations
 
-If you distribute this software or a modified version, you must:
+A business, company, or other organization that uses this software, or a modified version of it, in any commercial workflow, operation, product, service, hosted environment, internal tooling, consulting, or monetized deployment must obtain a separate written commercial license from the original author before doing so.
 
-- retain this license and the copyright notice;
-- clearly identify significant modifications; and
-- preserve the project name and attribution, unless the copyright holder gives written permission to do otherwise.
+Internal use by a company does not become allowed merely because the use is internal. If the software supports a business operation, product, or service that has commercial value or is used as part of a revenue-generating model, it is considered commercial use and requires prior written authorization.
 
-You may not imply that the copyright holder endorses, sponsors, or guarantees your fork, product, or service.
+5. Separate Commercial License Required
 
-6. Enforcement and remedies
+Any use that is commercial in nature requires a separate written commercial license from the original author. A commercial license may include, but is not limited to, fees, royalties, revenue-sharing terms, reporting obligations, attribution requirements, and other conditions as agreed in writing by the original author.
 
-Any use that violates this license is unauthorized and terminates the permissions granted by this license. The copyright holder reserves all rights and remedies available under applicable law, including the right to seek injunctive relief, damages, an accounting of profits, recovery of reasonable royalties or a reasonable license fee, and other relief for unauthorized commercial use or infringement. The availability and amount of any remedy will be determined under applicable law; this paragraph does not create a guaranteed or predetermined amount of damages or royalties.
+No commercial rights are granted by this License. The original author retains all rights not expressly granted herein.
 
-If you discover that you are using this software commercially without permission, stop the unauthorized use and contact the copyright holder to request a commercial license. Contacting the copyright holder does not retroactively authorize past use.
+6. Modified Forks and Attribution
 
-7. No warranty
+If you distribute or publish this software or a modified fork, you must:
 
-This software is provided "AS IS", without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the copyright holder be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software, except to the extent liability cannot legally be excluded.
+- retain this License and the copyright notice;
+- clearly identify the software as a modified version, if applicable;
+- preserve attribution to the original author; and
+- not imply that the original author endorses, sponsors, or guarantees your fork, product, or service.
 
-8. Reservation of rights
+You may not remove or obscure the original author credit or this license notice in any copy or substantial portion of the software.
 
-All rights not expressly granted by this license are reserved by the copyright holder.
+7. Enforcement and Remedies
 
-This license is intended to permit free sharing, modification, and donation-supported maintenance while preventing unlicensed commercial exploitation of the software and derivative works.
+Any unauthorized use of this software beyond the permissions granted in this License is prohibited and terminates the rights granted under this License.
+
+The original author reserves all rights and remedies available under applicable law, including the right to seek injunctive relief, damages, reasonable royalties or license fees, an accounting of profits, and any other appropriate remedy for unauthorized commercial use or infringement.
+
+If the original author learns that a business, organization, or other entity is using this software commercially without authorization, the original author may require that such use immediately cease, may demand a commercial license, and may pursue any remedies available under applicable law, including damages and other relief.
+
+8. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE ORIGINAL AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+9. Reservation of Rights
+
+All rights not expressly granted by this License are reserved by the original author.
+
+Contact Information
+
+Original Author: Joshua Sebastiano D. (Joshh3ro)
+GitHub: https://github.com/Joshh3ro
+LinkedIn: https://www.linkedin.com/in/joshua-sebastiano-d-9b740510b
+X: https://x.com/Josh_HeroTV
+
+If you wish to obtain a commercial license or have questions about permitted use, contact the original author through the channels listed above.
+
+This License is intended to keep Astra Lawnchair freely shareable and modifiable for non-commercial use, while protecting the original author from unlicensed commercial exploitation and ensuring that businesses or commercial actors who benefit from the project are required to obtain permission and, where applicable, pay for the rights to do so.
