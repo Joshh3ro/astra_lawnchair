@@ -2,24 +2,60 @@ Astra Lawnchair Non-Commercial License
 
 Copyright (c) 2026 Joshh3ro
 
-This software and all associated files in this repository are licensed under the following terms.
+IMPORTANT: This is a custom source-available license, not an OSI-approved open-source license. If you need to use this software commercially, contact the copyright holder for written permission before doing so.
 
-1. Permission is granted to use, copy, modify, merge, publish, distribute, and/or share this software for personal, educational, and non-commercial purposes.
+1. Grant of permission
 
-2. You may freely use, study, improve, and redistribute this software in source or compiled form, as long as such use remains non-commercial.
+Permission is granted to use, copy, study, modify, merge, publish, distribute, and share this software and modified versions for personal, educational, research, and other non-commercial purposes, subject to the terms below.
 
-3. You may not sell, lease, rent, fee-for-access, sublicense, or otherwise commercialize this software or any modified version of it as a standalone product or service.
+2. Donations permitted
 
-4. You may not use this software, or a modified version of it, as part of a paid product, subscription service, hosted service, SaaS offering, or any other primarily commercial offering.
+A person or organization may accept voluntary donations, tips, sponsorships, or grants in connection with maintaining, improving, documenting, or distributing this software or a modified fork, provided that:
 
-5. You may not use this software to generate revenue directly or indirectly through paid access, licensing, support contracts, or other commercial arrangements that are primarily intended to profit from the software or any derivative work.
+- the donation is not required to obtain access to the software or a feature;
+- the software is not placed behind a paywall or fee-for-access system; and
+- the donation is not a disguised purchase price, subscription fee, license fee, or other payment for the software or access to it.
 
-6. You may not distribute a modified or unmodified version of this software under a proprietary commercial license that restricts others from using it under the same non-commercial terms.
+Accepting donations does not by itself make an otherwise permitted use commercial.
 
-7. If you make modifications, you must retain this copyright notice and this license text in all copies or substantial portions of the software.
+3. Commercial use prohibited without permission
 
-8. This software is provided "AS IS", without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the author or copyright holder be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of or in connection with the software or the use or other dealings in the software.
+You may not, without prior written permission from the copyright holder:
 
-9. Commercial use requires written permission from the copyright holder. If you are interested in using this project commercially, please contact the author directly.
+- sell, lease, rent, sublicense, or charge for access to this software or a modified version;
+- distribute this software as part of a paid product, subscription, hosted service, SaaS offering, or other commercial product or service;
+- use this software or a modified version to provide a paid service to customers or users;
+- use this software as a material component of a business, product, or service that is offered for compensation or primarily for commercial advantage; or
+- relicense this software under proprietary commercial terms.
 
-This license is intended to keep the project freely shareable and modifiable while preventing resale or profit-driven commercialization of the project as a private tool.
+Commercial use includes use by a business to build, operate, or provide a revenue-generating product or service based on, incorporating, or materially depending on this software. Internal business use is also commercial when the software is used as part of the business's revenue-generating operations or commercial offering.
+
+4. Commercial license
+
+Commercial use is allowed only with a separate written commercial license from the copyright holder. A commercial license may require a fee, royalties, revenue share, attribution, reporting, or other terms agreed in writing by the parties. No commercial rights are granted unless and until those terms are agreed in a signed written license or other written authorization from the copyright holder.
+
+5. Modified versions and attribution
+
+If you distribute this software or a modified version, you must:
+
+- retain this license and the copyright notice;
+- clearly identify significant modifications; and
+- preserve the project name and attribution, unless the copyright holder gives written permission to do otherwise.
+
+You may not imply that the copyright holder endorses, sponsors, or guarantees your fork, product, or service.
+
+6. Enforcement and remedies
+
+Any use that violates this license is unauthorized and terminates the permissions granted by this license. The copyright holder reserves all rights and remedies available under applicable law, including the right to seek injunctive relief, damages, an accounting of profits, recovery of reasonable royalties or a reasonable license fee, and other relief for unauthorized commercial use or infringement. The availability and amount of any remedy will be determined under applicable law; this paragraph does not create a guaranteed or predetermined amount of damages or royalties.
+
+If you discover that you are using this software commercially without permission, stop the unauthorized use and contact the copyright holder to request a commercial license. Contacting the copyright holder does not retroactively authorize past use.
+
+7. No warranty
+
+This software is provided "AS IS", without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the copyright holder be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software, except to the extent liability cannot legally be excluded.
+
+8. Reservation of rights
+
+All rights not expressly granted by this license are reserved by the copyright holder.
+
+This license is intended to permit free sharing, modification, and donation-supported maintenance while preventing unlicensed commercial exploitation of the software and derivative works.
