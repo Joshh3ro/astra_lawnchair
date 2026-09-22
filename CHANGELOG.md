@@ -1,4 +1,11 @@
-## V0.1.4 A
+## V0.1.5 A
+
+- Batch Bot Configuration Switching (`Shift+S` Hotkey)
+    > One-step batch switching and hot-swapping across multiple or all accounts at once
+    - **One-Key Batch Hot-Swap**: Press `Shift+S` while focused on any config in the Configs menu to immediately apply that configuration to all accounts (or all queued accounts) that possess it, avoiding manual account-by-account switching
+    - **Queued Batch Execution**: Pressing `Shift+S` from the Accounts view or Main Menu gracefully terminates all currently running instances in the launch queue, polls until dead, and restarts them with their new configs (applying configured stagger delays)
+    - **Account Deduplication Safeguard**: Automatically filters queued targets to prevent duplicate instances from launching for the same account
+    - **UI & Hotkey Guidance**: Added `Shift+S: all` to the footer bar, updated the hotkey reference guide, and documented the action in README
 
 - Automated Bot Configuration Hot-Swapping & Reloading (`S` Hotkey)
     > Instant in-place bot configuration switching and reloading without manual kill-queue-run steps
@@ -8,6 +15,8 @@
     - **Smart Accounts Screen Action**: Pressing `S` on an account in the Accounts list switches to any staged configuration in the launch queue, or automatically digs into the account's configs list for immediate selection
     - **Full Obfuscation Support**: Emits masked status notifications (`Switched "Account #1" to config "PvP" (PID: ...)`) ensuring zero account name exposures in streamer mode
     - **UI & Hotkey Guidance**: Added `S: switch` to the footer bar, updated status prompts, and documented hotkey controls in the Hotkeys and Running Session panels
+
+## V0.1.4 A
 
 - Full-Screen Expanded Account Stats Dashboard & Unified Interactive ASCII Chart
     > Drill-down telemetry visualizer with single unified progression chart, series toggling, and multi-column loot breakdown
