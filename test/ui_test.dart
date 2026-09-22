@@ -47,7 +47,7 @@ void main() {
     });
 
     test('FooterBar renders hotkeys and status', () async {
-      await testNocterm('renders footer bar', (tester) async {
+      await testNocterm('renders footer bar', size: const Size(100, 24), (tester) async {
         await tester.pumpComponent(
           const FooterBar(
             statusMessage: 'Ready to launch',
@@ -61,8 +61,10 @@ void main() {
         expect(tester.terminalState, containsText('select'));
         expect(tester.terminalState, containsText('O'));
         expect(tester.terminalState, containsText('hide'));
+        expect(tester.terminalState, containsText('Shift+S'));
+        expect(tester.terminalState, containsText('all'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.4'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.5'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -732,8 +734,8 @@ void main() {
 
         // Verify right pane displays preview of changelog before digging in
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG SUMMARY'));
-        expect(tester.terminalState, containsText('Latest Updates (v0.1.4):'));
-        expect(tester.terminalState, containsText('Full-Screen Expanded Stats'));
+        expect(tester.terminalState, containsText('Latest Updates (v0.1.5):'));
+        expect(tester.terminalState, containsText('Batch Config Switch'));
 
         // Open About tab
         await tester.sendKey(LogicalKey.enter);
@@ -743,10 +745,10 @@ void main() {
         // 2. Verify single PaneBox renders About header & changelog content
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG'));
         expect(tester.terminalState, containsText('A S T R A   L A W N C H A I R'));
-        expect(tester.terminalState, containsText('Version 0.1.4'));
+        expect(tester.terminalState, containsText('Version 0.1.5'));
         expect(tester.terminalState, containsText('Joshh3ro'));
         expect(tester.terminalState, containsText('UPDATE CHANGELOG & RELEASE NOTES'));
-        expect(tester.terminalState, containsText('• V0.1.4 A (Latest Update) •'));
+        expect(tester.terminalState, containsText('• V0.1.5 A (Latest Update) •'));
 
         // 3. Press Backspace to return to Top Menu
         await tester.sendKey(LogicalKey.backspace);
@@ -884,6 +886,173 @@ void main() {
         // Check that real name 'SuperSecretUser' is never printed in terminal
         expect(tester.terminalState, isNot(containsText('SuperSecretUser')));
         expect(tester.terminalState, containsText('Switched "Account #1" to config "ConfigB"'));
+      });
+    });
+
+    test('MainScreen batch switches all accounts with matching config using Shift+S from configs view', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 100,
+      );
+
+      const accountAlpha = Account(
+        name: 'AccountAlpha',
+        folderPath: 'C:\\bots\\AccountAlpha',
+        exePath: 'C:\\bots\\AccountAlpha\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP', 'Farming'],
+      );
+
+      const accountBeta = Account(
+        name: 'AccountBeta',
+        folderPath: 'C:\\bots\\AccountBeta',
+        exePath: 'C:\\bots\\AccountBeta\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP', 'Mining'],
+      );
+
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: accountAlpha, configName: 'Farming'),
+        91111,
+      );
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: accountBeta, configName: 'Mining'),
+        92222,
+      );
+
+      await testNocterm('batch switch configs test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: const [accountAlpha, accountBeta],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [2]'));
+
+        // Dig into AccountAlpha's configs
+        await tester.sendKey(LogicalKey.enter);
+        await tester.pump();
+        expect(tester.terminalState, containsText('MENU: AccountAlpha (2 configs)'));
+        expect(tester.terminalState, containsText('PvP'));
+
+        // Focused on 'PvP' (index 0). Both AccountAlpha and AccountBeta have 'PvP'.
+        // Press Shift+S to batch switch all accounts to PvP
+        await tester.sendKeyEvent(const KeyboardEvent(
+          logicalKey: LogicalKey.keyS,
+          character: 'S',
+          modifiers: ModifierKeys(shift: true),
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await tester.pump();
+
+        // Verify status message confirms batch switch
+        expect(tester.terminalState, containsText('Batch switched 2 bot instance(s) successfully!'));
+
+        // Verify both sessions were updated in process tracker to 'PvP'
+        final sessionAlpha = processTracker.getSession('AccountAlpha');
+        expect(sessionAlpha, isNotNull);
+        expect(sessionAlpha!.configName, 'PvP');
+
+        final sessionBeta = processTracker.getSession('AccountBeta');
+        expect(sessionBeta, isNotNull);
+        expect(sessionBeta!.configName, 'PvP');
+      });
+    });
+
+    test('MainScreen batch switches queued accounts using Shift+S from accounts view', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final testConfig = AppConfig(
+        rootPath: tempRootPath(tempDir),
+        clientName: 'Unity',
+        staggerDelayMs: 20,
+      );
+
+      const account1 = Account(
+        name: 'BotOne',
+        folderPath: 'C:\\bots\\BotOne',
+        exePath: 'C:\\bots\\BotOne\\AstraBot.exe',
+        datPath: '',
+        configs: ['PvP', 'Farming'],
+      );
+
+      const account2 = Account(
+        name: 'BotTwo',
+        folderPath: 'C:\\bots\\BotTwo',
+        exePath: 'C:\\bots\\BotTwo\\AstraBot.exe',
+        datPath: '',
+        configs: ['Galaxy Gates', 'Mining'],
+      );
+
+      await processTracker.registerLaunch(
+        const LaunchTarget(account: account1, configName: 'PvP'),
+        91111,
+      );
+
+      await testNocterm('batch switch queued test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scannerService,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: const [account1, account2],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+
+        // Dig into BotOne and queue 'Farming' (arrow down, space)
+        await tester.sendKey(LogicalKey.enter);
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.space);
+        await tester.sendKey(LogicalKey.backspace);
+
+        // Move to BotTwo and queue 'Galaxy Gates'
+        await tester.sendKey(LogicalKey.arrowDown);
+        await tester.sendKey(LogicalKey.enter);
+        await tester.sendKey(LogicalKey.space);
+        await tester.sendKey(LogicalKey.backspace);
+
+        // Verify 2 items queued
+        expect(tester.terminalState, containsText('SELECTED (queued to launch) [2]'));
+
+        // Press Shift+S from Accounts view to batch switch both queued accounts
+        await tester.sendKeyEvent(const KeyboardEvent(
+          logicalKey: LogicalKey.keyS,
+          character: 'S',
+          modifiers: ModifierKeys(shift: true),
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await tester.pump();
+
+        // Verify status confirms batch switch
+        expect(tester.terminalState, containsText('Batch switched 2 bot instance(s) successfully!'));
+
+        // Process tracker should reflect BotOne -> Farming and BotTwo -> Galaxy Gates
+        final sessionOne = processTracker.getSession('BotOne');
+        expect(sessionOne, isNotNull);
+        expect(sessionOne!.configName, 'Farming');
+
+        final sessionTwo = processTracker.getSession('BotTwo');
+        expect(sessionTwo, isNotNull);
+        expect(sessionTwo!.configName, 'Galaxy Gates');
       });
     });
   });

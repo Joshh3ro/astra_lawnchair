@@ -552,6 +552,110 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  Future<void> _batchSwitchConfigs(List<LaunchTarget> targets) async {
+    if (_isBusy || targets.isEmpty) return;
+
+    // Deduplicate targets by account name to avoid launching duplicate instances for the same account
+    final seenAccounts = <String>{};
+    final uniqueTargets = <LaunchTarget>[];
+    for (final t in targets) {
+      if (seenAccounts.add(t.account.name)) {
+        uniqueTargets.add(t);
+      }
+    }
+
+    if (uniqueTargets.isEmpty) return;
+
+    setState(() {
+      _isBusy = true;
+      _setStatus(
+        'Preparing to batch switch ${uniqueTargets.length} bot(s)...',
+        LawnchairTheme.statusInfo,
+      );
+    });
+
+    final launcher = LauncherService(
+      staggerDelayMs: _currentConfig.staggerDelayMs,
+      clientName: _currentConfig.clientName,
+      isDryRun: component.launcherService.isDryRun,
+      autoStart: _currentConfig.autoStart,
+    );
+
+    int successCount = 0;
+    int failCount = 0;
+    String? firstError;
+    final completedAccountNames = <String>{};
+
+    try {
+      for (var i = 0; i < uniqueTargets.length; i++) {
+        final target = uniqueTargets[i];
+        final account = target.account;
+        final configName = target.configName;
+        final accountDisplayName = _getAccountDisplayName(account.name);
+        final existingSession = _processTracker.getSession(account.name);
+        final wasRunning = existingSession != null;
+
+        setState(() {
+          _setStatus(
+            '[${i + 1}/${uniqueTargets.length}] Switching "$accountDisplayName" to "$configName"...',
+            LawnchairTheme.statusInfo,
+          );
+        });
+
+        if (wasRunning) {
+          final oldPid = existingSession.pid;
+          await _processTracker.killSession(account.name);
+          _statTracker.resetAccount(account.name);
+
+          int waitedMs = 0;
+          while (waitedMs < 3000) {
+            final alive = await _processTracker.isProcessAlive(oldPid);
+            if (!alive) break;
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            waitedMs += 100;
+          }
+        }
+
+        final result = await launcher.launchSingle(target);
+        if (result.success && result.pid != null) {
+          _statTracker.resetAccount(account.name);
+          await _processTracker.registerLaunch(target, result.pid!);
+          successCount++;
+          completedAccountNames.add(account.name);
+        } else {
+          failCount++;
+          firstError ??= result.errorMessage ?? 'Unknown error';
+        }
+
+        if (i < uniqueTargets.length - 1 && _currentConfig.staggerDelayMs > 0) {
+          await Future<void>.delayed(Duration(milliseconds: _currentConfig.staggerDelayMs));
+        }
+      }
+
+      setState(() {
+        _isBusy = false;
+        _selectedQueue.removeWhere((t) => completedAccountNames.contains(t.account.name));
+
+        if (failCount == 0) {
+          _setStatus(
+            'Batch switched $successCount bot instance(s) successfully!',
+            LawnchairTheme.statusSuccess,
+          );
+        } else {
+          _setStatus(
+            'Batch switched $successCount bot(s) ($failCount failed). Error: $firstError',
+            LawnchairTheme.statusError,
+          );
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isBusy = false;
+        _setStatus('Batch switch failed: $e', LawnchairTheme.statusError);
+      });
+    }
+  }
+
   Future<void> _refreshFromDisk() async {
     if (_isBusy) return;
     setState(() {
@@ -744,8 +848,57 @@ class _MainScreenState extends State<MainScreen> {
       return true;
     }
 
-    // S: Hot-swap / reload focused config or running bot session
+    // Shift+S: Batch switch / hot-swap all selected or matching account configs
     if (_navLevel != NavigationLevel.editingRootPath &&
+        event.isShiftPressed &&
+        (event.character == 'S' || event.logicalKey == LogicalKey.keyS)) {
+      if (_navLevel == NavigationLevel.configs) {
+        final account = _activeAccount;
+        if (account != null && account.configs.isNotEmpty && _focusedConfigIndex < account.configs.length) {
+          final targetConfigName = account.configs[_focusedConfigIndex];
+          final queuedAccountNames = _selectedQueue.map((t) => t.account.name).toSet();
+          final List<LaunchTarget> targets = [];
+
+          if (queuedAccountNames.isNotEmpty) {
+            for (final acc in _accounts) {
+              if (queuedAccountNames.contains(acc.name) && acc.configs.contains(targetConfigName)) {
+                targets.add(LaunchTarget(account: acc, configName: targetConfigName));
+              }
+            }
+          } else {
+            for (final acc in _accounts) {
+              if (acc.configs.contains(targetConfigName)) {
+                targets.add(LaunchTarget(account: acc, configName: targetConfigName));
+              }
+            }
+          }
+
+          if (targets.isEmpty) {
+            _setStatus(
+              'No accounts found with config "$targetConfigName".',
+              LawnchairTheme.statusInfo,
+            );
+          } else {
+            _batchSwitchConfigs(targets);
+          }
+        }
+        return true;
+      } else {
+        if (_selectedQueue.isNotEmpty) {
+          _batchSwitchConfigs(List.from(_selectedQueue));
+        } else {
+          _setStatus(
+            'No accounts queued. Select configs with Space, or press Shift+S on a config inside an account to switch all.',
+            LawnchairTheme.statusInfo,
+          );
+        }
+        return true;
+      }
+    }
+
+    // S (without Shift): Hot-swap / reload focused config or running bot session
+    if (_navLevel != NavigationLevel.editingRootPath &&
+        !event.isShiftPressed &&
         (event.character?.toLowerCase() == 's' || event.logicalKey == LogicalKey.keyS)) {
       if (_navLevel == NavigationLevel.configs) {
         final account = _activeAccount;
@@ -1408,6 +1561,7 @@ class _MainScreenState extends State<MainScreen> {
             const SizedBox(height: 1),
             _hotkeyRow('R', 'Launch all queued accounts sequentially'),
             _hotkeyRow('S', 'Hot-swap or reload focused config for bot instantly'),
+            _hotkeyRow('Shift+S', 'Batch switch all selected or matching account configs at once'),
             _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
             _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
             _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
@@ -1458,7 +1612,7 @@ class _MainScreenState extends State<MainScreen> {
             Row(
               children: const [
                 Text('Astra Lawnchair ', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
-                Text('v0.1.4', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('v0.1.5', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 Spacer(),
                 Text('by Joshh3ro', style: LawnchairTheme.footerDesc),
               ],
@@ -1472,13 +1626,13 @@ class _MainScreenState extends State<MainScreen> {
             const Divider(),
             const SizedBox(height: 1),
             const Text(
-              'Latest Updates (v0.1.4):',
+              'Latest Updates (v0.1.5):',
               style: LawnchairTheme.statSectionHeader,
             ),
             const SizedBox(height: 1),
+            _changelogPreviewBullet('Batch Config Switch (Shift+S)', 'Switch all selected or matching accounts at once'),
+            _changelogPreviewBullet('In-Place Config Hot-Swap (S)', 'Fast restart with native profile parameter'),
             _changelogPreviewBullet('Full-Screen Expanded Stats', 'ASCII graphs & multi-column loot breakdown'),
-            _changelogPreviewBullet('Horizontal Velocity Meters', 'Clear proportional currency & velocity bars'),
-            _changelogPreviewBullet('Interactive Graph Toggles', 'Keys [1-4] toggle currency visibility live'),
             _changelogPreviewBullet('Loot Categorization', 'Trinity, ammo, resources & minerals sorted'),
             _changelogPreviewBullet('Auto-Start Bot Support', 'AstraBot execution via --auto-start config'),
             const SizedBox(height: 1),
@@ -1948,7 +2102,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 1),
             const Text(
-              'Version 0.1.4 | Created by Joshh3ro | Built with Nocterm',
+              'Version 0.1.5 | Created by Joshh3ro | Built with Nocterm',
               style: LawnchairTheme.footerDesc,
               textAlign: TextAlign.center,
             ),
@@ -1979,9 +2133,25 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 2),
 
+            // Release V0.1.5 A
+            _aboutReleaseCard(
+              version: 'V0.1.5 A (Latest Update)',
+              date: '2026-09-21',
+              highlights: [
+                'Batch Bot Configuration Switching (Shift+S Hotkey): One-step batch switching and hot-swapping across all accounts that possess the focused config, or across all queued targets.',
+                'Automated In-Place Config Hot-Swapping (S Hotkey): Instantly switch or reload any single bot\'s config with process termination verification and native profile launching.',
+                'Native Profile Launching: Passes --config "<name>" directly to the AstraBot executable without modifying or corrupting root configuration files.',
+                'Process Death Verification: Polling check confirms previous process is fully dead in the OS before spawning the replacement instance.',
+                'Footer Bar and Documentation Polish: Added Shift+S shortcut indicators, modernized GitHub badges in README, and updated changelogs.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
             // Release V0.1.4 A
             _aboutReleaseCard(
-              version: 'V0.1.4 A (Latest Update)',
+              version: 'V0.1.4 A',
               date: '2026-09-13',
               highlights: [
                 'Full-Screen Expanded Telemetry & ASCII Charts: Press Enter on any account in Stats view to open a full-screen dashboard featuring live progression charts (Uridium, Credits, XP, Honor) and a multi-column loot breakdown.',
