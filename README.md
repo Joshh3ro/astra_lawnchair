@@ -41,6 +41,7 @@ A Dart terminal UI (TUI) app, built with the **Nocterm** framework, that replace
 | `R` | Run all queued account/config pairs |
 | `S` | Hot-swap focused config or restart running bot session |
 | `Shift+S` | Batch switch all selected or matching account configs at once |
+| `C` | Copy focused config to other accounts interactively (Yellow mode) |
 | `K` | Terminate focused running bot process |
 | `O` | Toggle Obfuscate / Streamer Mode |
 | `Shift+R` | Refresh accounts and configs from disk |

@@ -1,5 +1,15 @@
 ## V0.1.5 A
 
+- Interactive Multi-Account Config Copying (`C` Hotkey & Yellow Palette Workspace)
+    > One-touch configuration duplication directly between accounts with distinct visual feedback
+    - **Interactive Copy Workspace**: Press `C` on any highlighted config in the Configs menu to open a dedicated multi-account copy workspace (`NavigationLevel.copyConfig`)
+    - **Distinct Yellow / Gold Color Scheme**: Designed specifically to differentiate copy destination selection from green launch queue staging, utilizing bold yellow checkboxes and black-on-yellow focused items
+    - **Target Status Badges**: Displays `[NEW]` (Cyan) for accounts without the config, and `[OVERWRITE]` (Yellow) for accounts that will have their config updated
+    - **Quick Controls & Batch Toggles**: `Space` to toggle accounts, `A` to toggle select-all/deselect-all, `Enter` or `C` to execute copy, and `Backspace` to cancel
+    - **Real-Time Summary Card**: Right pane tracks source account, config name, source file, selected count, and breakdown of New vs. Overwrite targets
+    - **Instant Disk & Cache Sync**: Copies `.json` files to target `configs/` folders on disk and updates memory & cache files (`<Account>-Configs.json` and `accounts.json`)
+    - **Streamer Mode Compliant**: All account names are anonymized when obfuscation is active
+
 - Batch Bot Configuration Switching (`Shift+S` Hotkey)
     > One-step batch switching and hot-swapping across multiple or all accounts at once
     - **One-Key Batch Hot-Swap**: Press `Shift+S` while focused on any config in the Configs menu to immediately apply that configuration to all accounts (or all queued accounts) that possess it, avoiding manual account-by-account switching

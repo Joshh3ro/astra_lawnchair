@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
 import '../../models/app_config.dart';
@@ -19,7 +21,7 @@ import '../widgets/footer_bar.dart';
 import '../widgets/list_item_row.dart';
 import '../widgets/pane_box.dart';
 
-enum NavigationLevel { topMenu, accounts, configs, stats, expandedStats, settings, editingRootPath, about }
+enum NavigationLevel { topMenu, accounts, configs, copyConfig, stats, expandedStats, settings, editingRootPath, about }
 
 enum TopMenuItem {
   accounts('Accounts', 'Manage accounts and queue bots'),
@@ -78,6 +80,14 @@ class _MainScreenState extends State<MainScreen> {
 
   NavigationLevel _navLevel = NavigationLevel.topMenu;
   Account? _activeAccount;
+
+  // Copy Config state
+  Account? _copySourceAccount;
+  String _copyConfigName = '';
+  File? _copySourceFile;
+  List<Account> _copyDestinationAccounts = [];
+  final Set<String> _selectedCopyDestinations = {};
+  int _focusedCopyAccountIndex = 0;
 
   int _focusedTopMenuIndex = 0;
   int _focusedAccountIndex = 0;
@@ -219,6 +229,11 @@ class _MainScreenState extends State<MainScreen> {
             _focusedConfigIndex--;
           }
           break;
+        case NavigationLevel.copyConfig:
+          if (_focusedCopyAccountIndex > 0) {
+            _focusedCopyAccountIndex--;
+          }
+          break;
         case NavigationLevel.stats:
           if (_focusedStatsAccountIndex > 0) {
             _focusedStatsAccountIndex--;
@@ -254,6 +269,11 @@ class _MainScreenState extends State<MainScreen> {
           final configs = _activeAccount?.configs ?? [];
           if (_focusedConfigIndex < configs.length - 1) {
             _focusedConfigIndex++;
+          }
+          break;
+        case NavigationLevel.copyConfig:
+          if (_focusedCopyAccountIndex < _copyDestinationAccounts.length - 1) {
+            _focusedCopyAccountIndex++;
           }
           break;
         case NavigationLevel.stats:
@@ -352,6 +372,12 @@ class _MainScreenState extends State<MainScreen> {
         _navLevel = NavigationLevel.settings;
         _settingsErrorMessage = '';
         _setStatus('Cancelled path editing.');
+      } else if (_navLevel == NavigationLevel.copyConfig) {
+        _navLevel = NavigationLevel.configs;
+        _selectedCopyDestinations.clear();
+        _copyDestinationAccounts = [];
+        _copySourceFile = null;
+        _setStatus('Cancelled config copy.');
       } else if (_navLevel == NavigationLevel.configs) {
         _navLevel = NavigationLevel.accounts;
         _activeAccount = null;
@@ -820,6 +846,159 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  Future<File?> _findConfigFile(Account account, String configName) async {
+    final configsDir = Directory(p.join(account.folderPath, 'configs'));
+    if (!configsDir.existsSync()) return null;
+
+    // 1. Direct match: <configName>.json
+    final directFile = File(p.join(configsDir.path, '$configName.json'));
+    if (directFile.existsSync()) return directFile;
+
+    // 2. Scan .json files in configs/ checking internal name or filename
+    try {
+      final entries = configsDir.listSync();
+      for (final entry in entries) {
+        if (entry is File && entry.path.toLowerCase().endsWith('.json')) {
+          if (p.basenameWithoutExtension(entry.path).toLowerCase() == configName.toLowerCase()) {
+            return entry;
+          }
+          try {
+            final content = await entry.readAsString();
+            final jsonMap = jsonDecode(content);
+            if (jsonMap is Map<String, dynamic> &&
+                jsonMap['name']?.toString().toLowerCase() == configName.toLowerCase()) {
+              return entry;
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<void> _startCopyConfig(Account sourceAccount, String configName) async {
+    final file = await _findConfigFile(sourceAccount, configName);
+    if (file == null || !file.existsSync()) {
+      _setStatus(
+        'Could not locate config file for "$configName".',
+        LawnchairTheme.statusError,
+      );
+      return;
+    }
+
+    final destinations = _accounts.where((a) => a.name != sourceAccount.name).toList();
+    if (destinations.isEmpty) {
+      _setStatus(
+        'No other accounts available to copy config to.',
+        LawnchairTheme.statusInfo,
+      );
+      return;
+    }
+
+    setState(() {
+      _copySourceAccount = sourceAccount;
+      _copyConfigName = configName;
+      _copySourceFile = file;
+      _copyDestinationAccounts = destinations;
+      _selectedCopyDestinations.clear();
+      _focusedCopyAccountIndex = 0;
+      _navLevel = NavigationLevel.copyConfig;
+      _setStatus(
+        'Copy mode: Select destination accounts with Space (or A for all). Press Enter/C to copy, Backspace to cancel.',
+        LawnchairTheme.statusInfo,
+      );
+    });
+  }
+
+  Future<void> _executeCopyConfig() async {
+    if (_isBusy || _copySourceAccount == null || _copySourceFile == null) return;
+    if (_selectedCopyDestinations.isEmpty) {
+      _setStatus(
+        'No destination accounts selected. Press Space to select accounts or Backspace to cancel.',
+        LawnchairTheme.statusInfo,
+      );
+      return;
+    }
+
+    final sourceFile = _copySourceFile!;
+    final sourceName = _copyConfigName;
+    final targetAccounts = _copyDestinationAccounts
+        .where((a) => _selectedCopyDestinations.contains(a.name))
+        .toList();
+
+    setState(() {
+      _isBusy = true;
+      _setStatus(
+        'Copying "$sourceName" to ${targetAccounts.length} account(s)...',
+        LawnchairTheme.statusInfo,
+      );
+    });
+
+    try {
+      final configContent = await sourceFile.readAsString();
+      final filename = p.basename(sourceFile.path);
+      int copiedCount = 0;
+
+      for (var i = 0; i < targetAccounts.length; i++) {
+        final targetAcc = targetAccounts[i];
+        final targetDisplayName = _getAccountDisplayName(targetAcc.name);
+
+        setState(() {
+          _setStatus(
+            '[${i + 1}/${targetAccounts.length}] Copying to "$targetDisplayName"...',
+            LawnchairTheme.statusInfo,
+          );
+        });
+
+        final targetConfigsDir = Directory(p.join(targetAcc.folderPath, 'configs'));
+        if (!targetConfigsDir.existsSync()) {
+          targetConfigsDir.createSync(recursive: true);
+        }
+
+        final targetFile = File(p.join(targetConfigsDir.path, filename));
+        await targetFile.writeAsString(configContent);
+
+        // Update target account configs in-memory if new
+        if (!targetAcc.configs.contains(sourceName)) {
+          final updatedConfigs = List<String>.from(targetAcc.configs)..add(sourceName);
+          updatedConfigs.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          final updatedAccount = targetAcc.copyWith(configs: updatedConfigs);
+
+          final accIdx = _accounts.indexWhere((a) => a.name == targetAcc.name);
+          if (accIdx != -1) {
+            _accounts[accIdx] = updatedAccount;
+          }
+
+          // Persist per-account config cache
+          await component.scannerService.saveAccountConfigsCache(targetAcc.name, updatedConfigs);
+        }
+
+        copiedCount++;
+      }
+
+      // Persist consolidated accounts cache
+      await component.scannerService.saveAccountsCache(_accounts);
+
+      setState(() {
+        _isBusy = false;
+        _navLevel = NavigationLevel.configs;
+        _selectedCopyDestinations.clear();
+        _copyDestinationAccounts = [];
+        _copySourceFile = null;
+        _setStatus(
+          'Successfully copied "$sourceName" to $copiedCount account(s)!',
+          LawnchairTheme.statusSuccess,
+        );
+      });
+    } catch (e) {
+      setState(() {
+        _isBusy = false;
+        _setStatus('Failed to copy config: $e', LawnchairTheme.statusError);
+      });
+    }
+  }
+
   bool _handleKeyEvent(KeyboardEvent event) {
     if (_isBusy) return true;
 
@@ -922,6 +1101,37 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
+    // C: Copy config (in configs mode) or execute copy (in copyConfig mode)
+    if (_navLevel == NavigationLevel.copyConfig &&
+        (event.character?.toLowerCase() == 'c' || event.logicalKey == LogicalKey.keyC)) {
+      _executeCopyConfig();
+      return true;
+    }
+    if (_navLevel == NavigationLevel.configs &&
+        (event.character?.toLowerCase() == 'c' || event.logicalKey == LogicalKey.keyC)) {
+      final account = _activeAccount;
+      if (account != null && account.configs.isNotEmpty && _focusedConfigIndex < account.configs.length) {
+        final configName = account.configs[_focusedConfigIndex];
+        _startCopyConfig(account, configName);
+      }
+      return true;
+    }
+
+    // A: Toggle select all / deselect all in copyConfig mode
+    if (_navLevel == NavigationLevel.copyConfig &&
+        (event.character?.toLowerCase() == 'a' || event.logicalKey == LogicalKey.keyA)) {
+      setState(() {
+        if (_selectedCopyDestinations.length == _copyDestinationAccounts.length) {
+          _selectedCopyDestinations.clear();
+          _setStatus('Deselected all destination accounts.');
+        } else {
+          _selectedCopyDestinations.addAll(_copyDestinationAccounts.map((a) => a.name));
+          _setStatus('Selected all ${_copyDestinationAccounts.length} destination account(s) for copy.');
+        }
+      });
+      return true;
+    }
+
     // O: Toggle Obfuscate / Streamer Mode (unless typing in text field)
     if (_navLevel != NavigationLevel.editingRootPath &&
         (event.character?.toLowerCase() == 'o' || event.logicalKey == LogicalKey.keyO)) {
@@ -989,6 +1199,9 @@ class _MainScreenState extends State<MainScreen> {
             _toggleConfigSelection(account, configName);
           }
           break;
+        case NavigationLevel.copyConfig:
+          _executeCopyConfig();
+          break;
         case NavigationLevel.stats:
           if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
             final targetAccount = _accounts[_focusedStatsAccountIndex];
@@ -1017,9 +1230,24 @@ class _MainScreenState extends State<MainScreen> {
       return true;
     }
 
-    // Space: Toggle selection in configs, open in accounts, or toggle setting
+    // Space: Toggle selection in configs/copyConfig, open in accounts, or toggle setting
     if (event.logicalKey == LogicalKey.space) {
-      if (_navLevel == NavigationLevel.configs) {
+      if (_navLevel == NavigationLevel.copyConfig) {
+        if (_copyDestinationAccounts.isNotEmpty &&
+            _focusedCopyAccountIndex < _copyDestinationAccounts.length) {
+          final target = _copyDestinationAccounts[_focusedCopyAccountIndex];
+          setState(() {
+            if (_selectedCopyDestinations.contains(target.name)) {
+              _selectedCopyDestinations.remove(target.name);
+              _setStatus('Deselected "${_getAccountDisplayName(target.name)}".');
+            } else {
+              _selectedCopyDestinations.add(target.name);
+              _setStatus('Selected "${_getAccountDisplayName(target.name)}" for copy.');
+            }
+          });
+        }
+        return true;
+      } else if (_navLevel == NavigationLevel.configs) {
         final account = _activeAccount;
         if (account != null && account.configs.isNotEmpty) {
           final configName = account.configs[_focusedConfigIndex];
@@ -1057,6 +1285,9 @@ class _MainScreenState extends State<MainScreen> {
             ? _getAccountDisplayName(_activeAccount!.name)
             : '';
         leftPaneTitle = 'MENU: $activeName (${_activeAccount?.configs.length ?? 0} configs)';
+        break;
+      case NavigationLevel.copyConfig:
+        leftPaneTitle = 'COPY CONFIG: "$_copyConfigName"';
         break;
       case NavigationLevel.stats:
         leftPaneTitle = 'TELEMETRY & STATS [${_accounts.length} Accounts]';
@@ -1131,6 +1362,12 @@ class _MainScreenState extends State<MainScreen> {
                             child: PaneBox(
                               title: leftPaneTitle,
                               isFocused: true,
+                              headerStyle: _navLevel == NavigationLevel.copyConfig
+                                  ? LawnchairTheme.paneHeaderCopy
+                                  : null,
+                              borderColor: _navLevel == NavigationLevel.copyConfig
+                                  ? Colors.yellow
+                                  : null,
                               child: _buildLeftPaneContent(),
                             ),
                           ),
@@ -1149,6 +1386,8 @@ class _MainScreenState extends State<MainScreen> {
             statusStyle: _statusStyle,
             runHotkey: _currentConfig.runHotkey,
             isObfuscated: _isObfuscated,
+            isCopyMode: _navLevel == NavigationLevel.copyConfig,
+            canCopy: _navLevel == NavigationLevel.configs,
           ),
         ],
       ),
@@ -1421,10 +1660,154 @@ class _MainScreenState extends State<MainScreen> {
           ),
         );
 
+      case NavigationLevel.copyConfig:
+        return _buildCopyConfigAccountsList();
+
       case NavigationLevel.about:
       case NavigationLevel.expandedStats:
         return const SizedBox();
     }
+  }
+
+  Component _buildCopyConfigAccountsList() {
+    if (_copyDestinationAccounts.isEmpty) {
+      return const Center(
+        child: Text(
+          'No other accounts available.\nPress Backspace to return.',
+          style: LawnchairTheme.statusInfo,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _copyDestinationAccounts.length,
+      itemBuilder: (context, index) {
+        final target = _copyDestinationAccounts[index];
+        final isFocused = index == _focusedCopyAccountIndex;
+        final isSelected = _selectedCopyDestinations.contains(target.name);
+        final alreadyHas = target.configs.contains(_copyConfigName);
+
+        final badge = alreadyHas ? '[OVERWRITE]' : '[NEW]';
+        final badgeStyle = alreadyHas ? LawnchairTheme.badgeCopyOverwrite : LawnchairTheme.badgeCopyNew;
+        final subtitle = alreadyHas
+            ? 'Overwrites existing "$_copyConfigName"'
+            : 'Creates new "$_copyConfigName"';
+
+        return ListItemRow(
+          title: _getAccountDisplayName(target.name),
+          subtitle: subtitle,
+          subtitleBelow: true,
+          badge: badge,
+          badgeStyle: badgeStyle,
+          isFocused: isFocused,
+          isSelected: isSelected,
+          showCheckbox: true,
+          selectedStyle: LawnchairTheme.itemCopyTarget,
+          selectedAndFocusedStyle: LawnchairTheme.itemCopyTargetFocused,
+          onTap: () {
+            setState(() {
+              _focusedCopyAccountIndex = index;
+              if (isSelected) {
+                _selectedCopyDestinations.remove(target.name);
+                _setStatus('Deselected "${_getAccountDisplayName(target.name)}".');
+              } else {
+                _selectedCopyDestinations.add(target.name);
+                _setStatus('Selected "${_getAccountDisplayName(target.name)}" for copy.');
+              }
+            });
+          },
+        );
+      },
+    );
+  }
+
+  Component _buildCopyConfigSummary() {
+    final sourceName = _copySourceAccount != null ? _getAccountDisplayName(_copySourceAccount!.name) : 'Unknown';
+    final totalTargets = _copyDestinationAccounts.length;
+    final selectedCount = _selectedCopyDestinations.length;
+
+    int overwriteCount = 0;
+    int newCount = 0;
+    for (final acc in _copyDestinationAccounts) {
+      if (_selectedCopyDestinations.contains(acc.name)) {
+        if (acc.configs.contains(_copyConfigName)) {
+          overwriteCount++;
+        } else {
+          newCount++;
+        }
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(1),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('CONFIG COPY WORKSPACE', style: LawnchairTheme.statSectionHeader),
+            const SizedBox(height: 1),
+            Row(
+              children: [
+                const Text('Source Account: ', style: LawnchairTheme.footerDesc),
+                Text(sourceName, style: LawnchairTheme.statValueHighlight),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('Config Name:    ', style: LawnchairTheme.footerDesc),
+                Text(_copyConfigName, style: LawnchairTheme.itemCopyTarget),
+              ],
+            ),
+            if (_copySourceFile != null) ...[
+              Row(
+                children: [
+                  const Text('Source File:    ', style: LawnchairTheme.footerDesc),
+                  Expanded(
+                    child: Text(
+                      p.basename(_copySourceFile!.path),
+                      style: LawnchairTheme.footerKey,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text('TARGET SELECTION BREAKDOWN', style: LawnchairTheme.statSectionHeader),
+            const SizedBox(height: 1),
+            Row(
+              children: [
+                const Text('Selected:     ', style: LawnchairTheme.footerDesc),
+                Text('$selectedCount of $totalTargets account(s)', style: LawnchairTheme.statValueHighlight),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('New Config:   ', style: LawnchairTheme.footerDesc),
+                Text('$newCount target(s)', style: LawnchairTheme.badgeCopyNew),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('Overwriting:  ', style: LawnchairTheme.footerDesc),
+                Text('$overwriteCount existing target(s)', style: LawnchairTheme.badgeCopyOverwrite),
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+            const Text('HOTKEYS', style: LawnchairTheme.statSectionHeader),
+            const SizedBox(height: 1),
+            const Text('Space:   Toggle account selection', style: LawnchairTheme.footerDesc),
+            const Text('A:       Select / Deselect all accounts', style: LawnchairTheme.footerDesc),
+            const Text('Enter/C: Execute copy to selected accounts', style: LawnchairTheme.footerDesc),
+            const Text('Bksp:    Cancel and return to configs', style: LawnchairTheme.footerDesc),
+          ],
+        ),
+      ),
+    );
   }
 
   Component _buildRightPane() {
@@ -1460,6 +1843,14 @@ class _MainScreenState extends State<MainScreen> {
           child: _buildAccountStatsDetails(focusedAccount),
         );
       }
+    } else if (_navLevel == NavigationLevel.copyConfig) {
+      return PaneBox(
+        title: 'COPY CONFIG SUMMARY',
+        isFocused: false,
+        headerStyle: LawnchairTheme.paneHeaderCopy,
+        borderColor: Colors.yellow,
+        child: _buildCopyConfigSummary(),
+      );
     } else if (_navLevel == NavigationLevel.stats) {
       final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
           ? _accounts[_focusedStatsAccountIndex]
@@ -1562,6 +1953,7 @@ class _MainScreenState extends State<MainScreen> {
             _hotkeyRow('R', 'Launch all queued accounts sequentially'),
             _hotkeyRow('S', 'Hot-swap or reload focused config for bot instantly'),
             _hotkeyRow('Shift+S', 'Batch switch all selected or matching account configs at once'),
+            _hotkeyRow('C', 'Copy focused config to other accounts interactively (Yellow mode)'),
             _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
             _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
             _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),

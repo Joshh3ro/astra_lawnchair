@@ -43,6 +43,38 @@ class LawnchairTheme {
     fontWeight: FontWeight.bold,
   );
 
+  // Copy mode item states (Yellow / Gold palette)
+  static const TextStyle itemCopyTarget = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle itemCopyTargetFocused = TextStyle(
+    color: Colors.black,
+    backgroundColor: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle badgeCopySource = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle paneHeaderCopy = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle badgeCopyOverwrite = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle badgeCopyNew = TextStyle(
+    color: Colors.cyan,
+    fontWeight: FontWeight.bold,
+  );
+
   // Footer & Status
   static const TextStyle footerKey = TextStyle(
     color: Colors.cyan,

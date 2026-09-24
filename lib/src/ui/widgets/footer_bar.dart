@@ -7,6 +7,8 @@ class FooterBar extends StatelessComponent {
   final TextStyle? statusStyle;
   final String runHotkey;
   final bool isObfuscated;
+  final bool isCopyMode;
+  final bool canCopy;
 
   const FooterBar({
     super.key,
@@ -14,6 +16,8 @@ class FooterBar extends StatelessComponent {
     this.statusStyle,
     this.runHotkey = 'R',
     this.isObfuscated = false,
+    this.isCopyMode = false,
+    this.canCopy = false,
   });
 
   static Future<void> _openUrl(String url) async {
@@ -65,27 +69,45 @@ class FooterBar extends StatelessComponent {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Row(
-            children: [
-              _keyItem('Space', 'select'),
-              const SizedBox(width: 1),
-              _keyItem('Enter', 'open'),
-              const SizedBox(width: 1),
-              _keyItem('Bksp', 'back'),
-              const SizedBox(width: 1),
-              _keyItem(runHotkey, 'run'),
-              const SizedBox(width: 1),
-              _keyItem('K', 'kill'),
-              const SizedBox(width: 1),
-              _keyItem('S', 'switch'),
-              const SizedBox(width: 1),
-              _keyItem('Shift+S', 'all'),
-              const SizedBox(width: 1),
-              _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
-              const SizedBox(width: 1),
-              _keyItem('Shift+R', 'refresh'),
-              const SizedBox(width: 1),
-              _keyItem('Q', 'quit'),
-            ],
+            children: isCopyMode
+                ? [
+                    _keyItem('Space', 'toggle'),
+                    const SizedBox(width: 1),
+                    _keyItem('A', 'all/none'),
+                    const SizedBox(width: 1),
+                    _keyItem('Enter/C', 'copy'),
+                    const SizedBox(width: 1),
+                    _keyItem('Bksp', 'cancel'),
+                    const SizedBox(width: 1),
+                    _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
+                    const SizedBox(width: 1),
+                    _keyItem('Q', 'quit'),
+                  ]
+                : [
+                    _keyItem('Space', 'select'),
+                    const SizedBox(width: 1),
+                    _keyItem('Enter', 'open'),
+                    const SizedBox(width: 1),
+                    _keyItem('Bksp', 'back'),
+                    const SizedBox(width: 1),
+                    _keyItem(runHotkey, 'run'),
+                    const SizedBox(width: 1),
+                    _keyItem('K', 'kill'),
+                    const SizedBox(width: 1),
+                    _keyItem('S', 'switch'),
+                    const SizedBox(width: 1),
+                    _keyItem('Shift+S', 'all'),
+                    const SizedBox(width: 1),
+                    if (canCopy) ...[
+                      _keyItem('C', 'copy'),
+                      const SizedBox(width: 1),
+                    ],
+                    _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
+                    const SizedBox(width: 1),
+                    _keyItem('Shift+R', 'refresh'),
+                    const SizedBox(width: 1),
+                    _keyItem('Q', 'quit'),
+                  ],
           ),
         ),
       ],
