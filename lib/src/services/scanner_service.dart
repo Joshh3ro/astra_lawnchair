@@ -213,4 +213,18 @@ class ScannerService {
       await file.writeAsString(encoder.convert(configs));
     } catch (_) {}
   }
+
+  /// Saves the list of configuration names for a given account to its per-account cache.
+  Future<void> saveAccountConfigsCache(String accountName, List<String> configs) =>
+      _saveAccountConfigsCache(accountName, configs);
+
+  /// Saves the consolidated accounts list to accounts.json.
+  Future<void> saveAccountsCache(List<Account> accounts) async {
+    try {
+      ensureDirectoryExists();
+      final jsonList = accounts.map((a) => a.toJson()).toList();
+      final encoder = const JsonEncoder.withIndent('  ');
+      await accountsCacheFile.writeAsString(encoder.convert(jsonList));
+    } catch (_) {}
+  }
 }

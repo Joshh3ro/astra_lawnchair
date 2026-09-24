@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:astra_lawnchair/astra_lawnchair.dart';
 import 'package:nocterm/nocterm.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -1053,6 +1054,140 @@ void main() {
         final sessionTwo = processTracker.getSession('BotTwo');
         expect(sessionTwo, isNotNull);
         expect(sessionTwo!.configName, 'Galaxy Gates');
+      });
+    });
+
+    test('MainScreen Copy Config opens interactive yellow copy workspace and copies config to target accounts', () async {
+      final configService = ConfigService(baseDir: tempDir.path);
+      final processTracker = ProcessTrackerService(baseDir: tempDir.path);
+      final scanner = ScannerService(baseDir: tempDir.path);
+
+      // Create dummy account folders and configs on disk
+      final account1Dir = Directory(p.join(tempDir.path, 'AccountSource'))..createSync(recursive: true);
+      final account1ConfigsDir = Directory(p.join(account1Dir.path, 'configs'))..createSync(recursive: true);
+      File(p.join(account1ConfigsDir.path, 'Palladium.json'))
+        .writeAsStringSync('{"name": "Palladium", "speed": 100}');
+
+      final account2Dir = Directory(p.join(tempDir.path, 'AccountTarget1'))..createSync(recursive: true);
+      final account2ConfigsDir = Directory(p.join(account2Dir.path, 'configs'))..createSync(recursive: true);
+
+      final account3Dir = Directory(p.join(tempDir.path, 'AccountTarget2'))..createSync(recursive: true);
+      final account3ConfigsDir = Directory(p.join(account3Dir.path, 'configs'))..createSync(recursive: true);
+      File(p.join(account3ConfigsDir.path, 'Palladium.json'))
+        .writeAsStringSync('{"name": "Palladium", "speed": 50}');
+
+      final account1 = Account(
+        name: 'AccountSource',
+        folderPath: account1Dir.path,
+        exePath: '',
+        datPath: '',
+        configs: ['Palladium'],
+      );
+
+      final account2 = Account(
+        name: 'AccountTarget1',
+        folderPath: account2Dir.path,
+        exePath: '',
+        datPath: '',
+        configs: ['Mining'],
+      );
+
+      final account3 = Account(
+        name: 'AccountTarget2',
+        folderPath: account3Dir.path,
+        exePath: '',
+        datPath: '',
+        configs: ['Palladium', 'PvP'],
+      );
+
+      final testConfig = AppConfig(
+        rootPath: tempDir.path,
+        clientName: 'Unity',
+      );
+
+      await testNocterm('copy config test', (tester) async {
+        await tester.pumpComponent(
+          MainScreen(
+            config: testConfig,
+            configService: configService,
+            scannerService: scanner,
+            launcherService: const LauncherService(isDryRun: true),
+            processTrackerService: processTracker,
+            initialAccounts: [account1, account2, account3],
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // 1. Enter Accounts menu
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: Accounts [3]'));
+
+        // 2. Dig into AccountSource
+        await tester.sendKey(LogicalKey.enter);
+        expect(tester.terminalState, containsText('MENU: AccountSource (1 configs)'));
+        expect(tester.terminalState, containsText('Palladium'));
+
+        // 3. Press 'C' to initiate Copy Config
+        await tester.sendKey(LogicalKey.keyC);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+
+        // Verify we are in Copy Config mode
+        expect(tester.terminalState, containsText('COPY CONFIG: "Palladium"'));
+        expect(tester.terminalState, containsText('CONFIG COPY WORKSPACE'));
+        expect(tester.terminalState, containsText('TARGET SELECTION BREAKDOWN'));
+
+        // Check target accounts listed
+        expect(tester.terminalState, containsText('AccountTarget1'));
+        expect(tester.terminalState, containsText('[NEW]'));
+        expect(tester.terminalState, containsText('AccountTarget2'));
+        expect(tester.terminalState, containsText('[OVERWRITE]'));
+
+        // 4. Test cancel with Backspace
+        await tester.sendKey(LogicalKey.backspace);
+        expect(tester.terminalState, containsText('Cancelled config copy.'));
+        expect(tester.terminalState, containsText('MENU: AccountSource (1 configs)'));
+
+        // Re-enter Copy Config with 'C'
+        await tester.sendKey(LogicalKey.keyC);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        expect(tester.terminalState, containsText('COPY CONFIG: "Palladium"'));
+
+        // 5. Test Select All with 'A'
+        await tester.sendKey(LogicalKey.keyA);
+        expect(tester.terminalState, containsText('Selected all 2 destination account(s) for copy.'));
+        expect(tester.terminalState, containsText('Selected:     2 of 2 account(s)'));
+
+        // Deselect All with 'A'
+        await tester.sendKey(LogicalKey.keyA);
+        expect(tester.terminalState, containsText('Deselected all destination accounts.'));
+        expect(tester.terminalState, containsText('Selected:     0 of 2 account(s)'));
+
+        // Toggle first account (AccountTarget1) with Space
+        await tester.sendKey(LogicalKey.space);
+        expect(tester.terminalState, containsText('Selected "AccountTarget1" for copy.'));
+        expect(tester.terminalState, containsText('Selected:     1 of 2 account(s)'));
+
+        // 6. Execute copy with Enter
+        await tester.sendKey(LogicalKey.enter);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await tester.pump();
+
+        // Verify status confirmation and return to configs list
+        expect(tester.terminalState, containsText('Successfully copied "Palladium" to 1 account(s)!'));
+        expect(tester.terminalState, containsText('MENU: AccountSource (1 configs)'));
+
+        // Verify target file exists on disk
+        final copiedFile = File(p.join(account2ConfigsDir.path, 'Palladium.json'));
+        expect(copiedFile.existsSync(), isTrue);
+        expect(copiedFile.readAsStringSync(), contains('"speed": 100'));
+
+        // Verify target account cache file updated
+        final cacheFile = scanner.accountConfigFile('AccountTarget1');
+        expect(cacheFile.existsSync(), isTrue);
+        expect(cacheFile.readAsStringSync(), contains('Palladium'));
       });
     });
   });

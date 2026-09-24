@@ -4,6 +4,8 @@ import '../theme.dart';
 class PaneBox extends StatelessComponent {
   final String title;
   final bool isFocused;
+  final TextStyle? headerStyle;
+  final Color? borderColor;
   final Component child;
 
   const PaneBox({
@@ -11,6 +13,8 @@ class PaneBox extends StatelessComponent {
     required this.title,
     required this.child,
     this.isFocused = false,
+    this.headerStyle,
+    this.borderColor,
   });
 
   @override
@@ -18,7 +22,8 @@ class PaneBox extends StatelessComponent {
     return Container(
       decoration: BoxDecoration(
         border: BoxBorder.all(
-          color: isFocused ? LawnchairTheme.borderFocused : LawnchairTheme.borderNormal,
+          color: borderColor ??
+              (isFocused ? LawnchairTheme.borderFocused : LawnchairTheme.borderNormal),
         ),
       ),
       child: Column(
@@ -28,9 +33,10 @@ class PaneBox extends StatelessComponent {
             padding: const EdgeInsets.symmetric(horizontal: 1),
             child: Text(
               title,
-              style: isFocused
-                  ? LawnchairTheme.paneHeaderFocused
-                  : LawnchairTheme.paneHeaderNormal,
+              style: headerStyle ??
+                  (isFocused
+                      ? LawnchairTheme.paneHeaderFocused
+                      : LawnchairTheme.paneHeaderNormal),
             ),
           ),
           const Divider(),

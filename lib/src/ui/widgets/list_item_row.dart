@@ -10,6 +10,8 @@ class ListItemRow extends StatelessComponent {
   final bool showCheckbox;
   final String? badge;
   final TextStyle? badgeStyle;
+  final TextStyle? selectedStyle;
+  final TextStyle? selectedAndFocusedStyle;
   final VoidCallback? onTap;
 
   const ListItemRow({
@@ -19,6 +21,8 @@ class ListItemRow extends StatelessComponent {
     this.subtitleBelow = false,
     this.badge,
     this.badgeStyle,
+    this.selectedStyle,
+    this.selectedAndFocusedStyle,
     this.isFocused = false,
     this.isSelected = false,
     this.showCheckbox = false,
@@ -30,11 +34,11 @@ class ListItemRow extends StatelessComponent {
     // Determine style based on focused and selected
     TextStyle textStyle;
     if (isSelected && isFocused) {
-      textStyle = LawnchairTheme.itemSelectedAndFocused;
+      textStyle = selectedAndFocusedStyle ?? LawnchairTheme.itemSelectedAndFocused;
     } else if (isFocused) {
       textStyle = LawnchairTheme.itemFocused;
     } else if (isSelected) {
-      textStyle = LawnchairTheme.itemSelected;
+      textStyle = selectedStyle ?? LawnchairTheme.itemSelected;
     } else {
       textStyle = LawnchairTheme.itemNormal;
     }
