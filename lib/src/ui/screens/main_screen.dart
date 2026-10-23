@@ -5,10 +5,13 @@ import 'package:path/path.dart' as p;
 import 'package:nocterm/nocterm.dart';
 import '../../models/account.dart';
 import '../../models/app_config.dart';
+import '../../models/fleet_stats_snapshot.dart';
 import '../../models/launch_target.dart';
 import '../../models/running_session.dart';
 import '../../services/config_service.dart';
+import '../../services/fleet_log_service.dart';
 import '../../services/launcher_service.dart';
+import '../../services/log_cleaner_service.dart';
 import '../../services/process_tracker_service.dart';
 import '../../services/scanner_service.dart';
 import '../../services/stat_tracker_service.dart';
@@ -21,11 +24,11 @@ import '../widgets/footer_bar.dart';
 import '../widgets/list_item_row.dart';
 import '../widgets/pane_box.dart';
 
-enum NavigationLevel { topMenu, accounts, configs, copyConfig, stats, expandedStats, settings, editingRootPath, about }
+enum NavigationLevel { topMenu, fleetMatrix, accounts, configs, copyConfig, stats, expandedStats, settings, editingRootPath, about }
 
 enum TopMenuItem {
   accounts('Accounts', 'Manage accounts and queue bots'),
-  stats('Stats', 'Live account telemetry, currency rates & logs'),
+  stats('Stats & Fleet Matrix', 'Live fleet-wide telemetry, aggregates & bot monitoring'),
   hotkeys('Hotkeys', 'Keyboard shortcuts & navigation'),
   settings('Settings', 'App preferences & launch parameters'),
   about('About', 'Project info & update changelog'),
@@ -56,7 +59,11 @@ class MainScreen extends StatefulComponent {
   final LauncherService launcherService;
   final ProcessTrackerService? processTrackerService;
   final StatTrackerService? statTrackerService;
+  final LogCleanerService? logCleanerService;
+  final FleetLogService? fleetLogService;
   final List<Account> initialAccounts;
+  final bool? initialObfuscated;
+  final NavigationLevel? initialNavLevel;
 
   const MainScreen({
     super.key,
@@ -66,7 +73,11 @@ class MainScreen extends StatefulComponent {
     required this.launcherService,
     this.processTrackerService,
     this.statTrackerService,
+    this.logCleanerService,
+    this.fleetLogService,
     required this.initialAccounts,
+    this.initialObfuscated,
+    this.initialNavLevel,
   });
 
   @override
@@ -104,9 +115,13 @@ class _MainScreenState extends State<MainScreen> {
 
   late final ProcessTrackerService _processTracker;
   late final StatTrackerService _statTracker;
+  late final LogCleanerService _logCleaner;
+  late final FleetLogService _fleetLogService;
   Timer? _statsPollTimer;
 
   bool _isObfuscated = false;
+  bool _isEscapeMenuOpen = false;
+  int _focusedEscapeActionIndex = 0;
 
   // Chart series visibility toggles in expanded telemetry view
   bool _showChartUridium = true;
@@ -120,13 +135,26 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _currentConfig = component.config;
-    _isObfuscated = _currentConfig.obfuscateNames;
+    _isObfuscated = component.initialObfuscated ?? _currentConfig.obfuscateNames;
+    if (component.initialNavLevel != null) {
+      _navLevel = component.initialNavLevel!;
+    }
     _accounts = List.from(component.initialAccounts);
     _processTracker = component.processTrackerService ??
         ProcessTrackerService(
           baseDir: component.configService?.baseDir ?? ConfigService.defaultStorageDir(),
         );
     _statTracker = component.statTrackerService ?? StatTrackerService();
+    _logCleaner = component.logCleanerService ??
+        LogCleanerService(
+          processTracker: _processTracker,
+          statTracker: _statTracker,
+        );
+    _fleetLogService = component.fleetLogService ??
+        FleetLogService(
+          baseDir: component.configService?.baseDir ?? ConfigService.defaultStorageDir(),
+        );
+    _fleetLogService.init();
     _initProcessTracker();
     _startStatsPolling();
   }
@@ -192,9 +220,72 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
+    // Build and record overall fleet telemetry snapshot
+    if (_accounts.isNotEmpty && (_pollCount == 1 || _pollCount % 3 == 0)) {
+      final snapshot = _buildCurrentFleetSnapshot();
+      _fleetLogService.recordSnapshot(snapshot);
+    }
+
     if (mounted) {
       setState(() {});
     }
+  }
+
+  FleetStatsSnapshot _buildCurrentFleetSnapshot() {
+    int runningCount = 0;
+    int totalUridium = 0;
+    int totalCredits = 0;
+    int totalExperience = 0;
+    int totalHonor = 0;
+    int totalDeaths = 0;
+    double totalVelocity = 0;
+    double totalExperienceVelocity = 0;
+    double totalHonorVelocity = 0;
+    final breakdowns = <String, AccountStatsSnapshotSummary>{};
+
+    for (final account in _accounts) {
+      final isRunning = _processTracker.isRunning(account.name);
+      if (isRunning) runningCount++;
+      final stats = _statTracker.getStats(account.name);
+      if (stats != null) {
+        totalUridium += stats.uridium;
+        totalCredits += stats.credits;
+        totalExperience += stats.experience;
+        totalHonor += stats.honor;
+        totalDeaths += stats.deathCount;
+        totalVelocity += stats.uridiumPerHour;
+        totalExperienceVelocity += stats.experiencePerHour;
+        totalHonorVelocity += stats.honorPerHour;
+
+        breakdowns[account.name] = AccountStatsSnapshotSummary(
+          accountName: account.name,
+          uridium: stats.uridium,
+          credits: stats.credits,
+          experience: stats.experience,
+          honor: stats.honor,
+          deaths: stats.deathCount,
+          uptimeSeconds: stats.uptimeSeconds,
+          currentMap: stats.currentMap,
+          botState: stats.botState,
+        );
+      }
+    }
+
+    return FleetStatsSnapshot(
+      timestamp: DateTime.now(),
+      sessionId: _fleetLogService.currentSessionId,
+      runningBots: runningCount,
+      totalAccounts: _accounts.length,
+      totalUridium: totalUridium,
+      totalCredits: totalCredits,
+      totalExperience: totalExperience,
+      totalHonor: totalHonor,
+      totalDeaths: totalDeaths,
+      uridiumPerHour: totalVelocity,
+      experiencePerHour: totalExperienceVelocity,
+      honorPerHour: totalHonorVelocity,
+      accountBreakdowns: breakdowns,
+    );
   }
 
   @override
@@ -235,6 +326,7 @@ class _MainScreenState extends State<MainScreen> {
           }
           break;
         case NavigationLevel.stats:
+        case NavigationLevel.fleetMatrix:
           if (_focusedStatsAccountIndex > 0) {
             _focusedStatsAccountIndex--;
           }
@@ -277,6 +369,7 @@ class _MainScreenState extends State<MainScreen> {
           }
           break;
         case NavigationLevel.stats:
+        case NavigationLevel.fleetMatrix:
           if (_focusedStatsAccountIndex < _accounts.length - 1) {
             _focusedStatsAccountIndex++;
           }
@@ -307,7 +400,7 @@ class _MainScreenState extends State<MainScreen> {
           _navLevel = NavigationLevel.stats;
           _focusedStatsAccountIndex = 0;
           _pollStats();
-          _setStatus('Account Stats: Press ↑/↓ to browse, Enter to expand dashboard & graphs, Backspace to return.');
+          _setStatus('Stats & Fleet Matrix: Press ↑/↓ to browse, Enter to inspect stats, Space to queue, G to close.');
         });
         break;
       case TopMenuItem.hotkeys:
@@ -357,8 +450,11 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  void _digIntoExpandedStats(Account account) {
+  NavigationLevel _expandedStatsPreviousLevel = NavigationLevel.stats;
+
+  void _digIntoExpandedStats(Account account, [NavigationLevel previousLevel = NavigationLevel.stats]) {
     setState(() {
+      _expandedStatsPreviousLevel = previousLevel;
       _activeAccount = account;
       _navLevel = NavigationLevel.expandedStats;
       _pollStats();
@@ -383,10 +479,15 @@ class _MainScreenState extends State<MainScreen> {
         _activeAccount = null;
         _setStatus('Returned to Accounts list.');
       } else if (_navLevel == NavigationLevel.expandedStats) {
-        _navLevel = NavigationLevel.stats;
-        _setStatus('Returned to Account Stats view.');
+        _navLevel = _expandedStatsPreviousLevel;
+        if (_navLevel == NavigationLevel.fleetMatrix) {
+          _setStatus('Returned to Fleet Command Matrix.');
+        } else {
+          _setStatus('Returned to Account Stats view.');
+        }
       } else if (_navLevel == NavigationLevel.accounts ||
           _navLevel == NavigationLevel.stats ||
+          _navLevel == NavigationLevel.fleetMatrix ||
           _navLevel == NavigationLevel.settings ||
           _navLevel == NavigationLevel.about) {
         _navLevel = NavigationLevel.topMenu;
@@ -497,6 +598,23 @@ class _MainScreenState extends State<MainScreen> {
         _selectedQueue.remove(target);
         _setStatus('Removed "${_getTargetDisplayName(target)}" from launch queue.');
       } else {
+        _selectedQueue.add(target);
+        _setStatus('Added "${_getTargetDisplayName(target)}" to launch queue.');
+      }
+    });
+  }
+
+  void _toggleFleetAccountQueue(Account account) {
+    final queued = _selectedQueue.where((t) => t.account.name == account.name).toList();
+    setState(() {
+      if (queued.isNotEmpty) {
+        _selectedQueue.removeWhere((t) => t.account.name == account.name);
+        _setStatus('Removed "${_getAccountDisplayName(account.name)}" from launch queue.');
+      } else {
+        final runningSession = _processTracker.getSession(account.name);
+        final configName = runningSession?.configName ??
+            (account.configs.isNotEmpty ? account.configs.first : 'default');
+        final target = LaunchTarget(account: account, configName: configName);
         _selectedQueue.add(target);
         _setStatus('Added "${_getTargetDisplayName(target)}" to launch queue.');
       }
@@ -816,6 +934,10 @@ class _MainScreenState extends State<MainScreen> {
       }
     } else if (_navLevel == NavigationLevel.configs) {
       targetAccountName = _activeAccount?.name;
+    } else if (_navLevel == NavigationLevel.fleetMatrix || _navLevel == NavigationLevel.stats) {
+      if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
+        targetAccountName = _accounts[_focusedStatsAccountIndex].name;
+      }
     }
 
     if (targetAccountName == null) {
@@ -844,6 +966,45 @@ class _MainScreenState extends State<MainScreen> {
         _setStatus('Process ${session.pid} already exited or could not be terminated.', LawnchairTheme.statusError);
       }
     });
+  }
+
+  Future<void> _cleanLogs() async {
+    if (_isBusy) return;
+    if (_accounts.isEmpty) {
+      _setStatus('No accounts found to clean logs for.', LawnchairTheme.statusInfo);
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _setStatus('Sweeping log files across ${_accounts.length} account(s)...', LawnchairTheme.statusInfo);
+    });
+
+    try {
+      final result = await _logCleaner.cleanAllLogs(_accounts);
+      setState(() {
+        _isBusy = false;
+        final protectedMsg = result.runningBotsProtected > 0
+            ? ' (${result.runningBotsProtected} active bot(s) protected)'
+            : '';
+        if (result.filesDeleted > 0) {
+          _setStatus(
+            'Cleaned ${result.filesDeleted} log file(s) (${result.formattedBytes} freed) across ${result.accountsScanned} account(s)$protectedMsg.',
+            LawnchairTheme.statusSuccess,
+          );
+        } else {
+          _setStatus(
+            'All log directories are already clean (0 log files deleted)$protectedMsg.',
+            LawnchairTheme.statusInfo,
+          );
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isBusy = false;
+        _setStatus('Log clean failed: $e', LawnchairTheme.statusError);
+      });
+    }
   }
 
   Future<File?> _findConfigFile(Account account, String configName) async {
@@ -999,8 +1160,177 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  List<_EscapeAction> get _escapeActions => [
+    _EscapeAction(
+      keyHint: 'S',
+      title: 'Settings & Preferences',
+      description: 'Configure client, stagger delay, auto-start, and root folder',
+      onSelect: _navigateFromEscapeToSettings,
+    ),
+    _EscapeAction(
+      keyHint: 'G',
+      title: 'Stats & Fleet Matrix',
+      description: 'Multi-bot live telemetry table, fleet pulse rates & aggregates',
+      onSelect: _navigateFromEscapeToFleet,
+    ),
+    _EscapeAction(
+      keyHint: 'A',
+      title: 'Accounts & Launch Queue',
+      description: 'Manage accounts, explore configs, and stage bots for launch',
+      onSelect: _navigateFromEscapeToAccounts,
+    ),
+    _EscapeAction(
+      keyHint: 'O',
+      title: 'Streamer Mode [${_isObfuscated ? "ON" : "OFF"}]',
+      description: 'Toggle account name & proxy IP obfuscation',
+      onSelect: _toggleObfuscation,
+    ),
+    _EscapeAction(
+      keyHint: 'Shift+L',
+      title: 'Sweep Stale Logs',
+      description: 'Clean old log files across accounts with active bot protection',
+      onSelect: () {
+        setState(() {
+          _isEscapeMenuOpen = false;
+        });
+        _cleanLogs();
+      },
+    ),
+    _EscapeAction(
+      keyHint: 'Esc',
+      title: 'Resume Session',
+      description: 'Close this Quick Menu and return to current screen',
+      onSelect: () {
+        setState(() {
+          _isEscapeMenuOpen = false;
+          _setStatus('Resumed.');
+        });
+      },
+    ),
+  ];
+
+  void _navigateFromEscapeToSettings() {
+    setState(() {
+      _isEscapeMenuOpen = false;
+      _navLevel = NavigationLevel.settings;
+      _focusedSettingsIndex = 0;
+      _setStatus('Navigated to Settings from Quick Menu.');
+    });
+  }
+
+  void _navigateFromEscapeToFleet() {
+    setState(() {
+      _isEscapeMenuOpen = false;
+      _navLevel = NavigationLevel.stats;
+      if (_focusedStatsAccountIndex >= _accounts.length) {
+        _focusedStatsAccountIndex = 0;
+      }
+      _pollStats();
+      _setStatus('Navigated to Stats & Fleet Matrix from Quick Menu.');
+    });
+  }
+
+  void _navigateFromEscapeToAccounts() {
+    setState(() {
+      _isEscapeMenuOpen = false;
+      _navLevel = NavigationLevel.accounts;
+      if (_focusedAccountIndex >= _accounts.length) {
+        _focusedAccountIndex = 0;
+      }
+      _setStatus('Navigated to Accounts from Quick Menu.');
+    });
+  }
+
   bool _handleKeyEvent(KeyboardEvent event) {
     if (_isBusy) return true;
+
+    // Handle keys when Escape Menu modal is open
+    if (_isEscapeMenuOpen) {
+      if (event.logicalKey == LogicalKey.escape || event.logicalKey == LogicalKey.backspace) {
+        setState(() {
+          _isEscapeMenuOpen = false;
+          _setStatus('Resumed.');
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowUp) {
+        setState(() {
+          if (_focusedEscapeActionIndex > 0) {
+            _focusedEscapeActionIndex--;
+          }
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.arrowDown) {
+        setState(() {
+          if (_focusedEscapeActionIndex < _escapeActions.length - 1) {
+            _focusedEscapeActionIndex++;
+          }
+        });
+        return true;
+      }
+
+      if (event.logicalKey == LogicalKey.enter) {
+        _escapeActions[_focusedEscapeActionIndex].onSelect();
+        return true;
+      }
+
+      if (!event.isShiftPressed &&
+          (event.character?.toLowerCase() == 's' || event.logicalKey == LogicalKey.keyS)) {
+        _navigateFromEscapeToSettings();
+        return true;
+      }
+
+      if (!event.isShiftPressed &&
+          (event.character?.toLowerCase() == 'g' || event.logicalKey == LogicalKey.keyG)) {
+        _navigateFromEscapeToFleet();
+        return true;
+      }
+
+      if (!event.isShiftPressed &&
+          (event.character?.toLowerCase() == 'a' || event.logicalKey == LogicalKey.keyA)) {
+        _navigateFromEscapeToAccounts();
+        return true;
+      }
+
+      if (!event.isShiftPressed &&
+          (event.character?.toLowerCase() == 'o' || event.logicalKey == LogicalKey.keyO)) {
+        _toggleObfuscation();
+        return true;
+      }
+
+      if (event.isShiftPressed &&
+          (event.character == 'L' || event.logicalKey == LogicalKey.keyL)) {
+        setState(() {
+          _isEscapeMenuOpen = false;
+        });
+        _cleanLogs();
+        return true;
+      }
+
+      if (event.character?.toLowerCase() == 'q') {
+        shutdownApp();
+        return true;
+      }
+
+      return true;
+    }
+
+    // Escape key: Open Quick Menu & Hotkey Cheatsheet
+    if (event.logicalKey == LogicalKey.escape) {
+      if (_navLevel == NavigationLevel.editingRootPath) {
+        _popNavigation();
+        return true;
+      }
+      setState(() {
+        _isEscapeMenuOpen = true;
+        _focusedEscapeActionIndex = 0;
+        _setStatus('Quick Menu: Press Esc to resume, S for Settings, or ↑/↓ to navigate.');
+      });
+      return true;
+    }
 
     // Shift+R: Refresh
     if (event.isShiftPressed && event.logicalKey == LogicalKey.keyR) {
@@ -1008,9 +1338,37 @@ class _MainScreenState extends State<MainScreen> {
       return true;
     }
 
+    // Shift+L: Clean all account log files
+    if (_navLevel != NavigationLevel.editingRootPath &&
+        event.isShiftPressed &&
+        (event.character == 'L' || event.logicalKey == LogicalKey.keyL)) {
+      _cleanLogs();
+      return true;
+    }
+
     // Q: Quit
     if (event.character?.toLowerCase() == 'q') {
       shutdownApp();
+    }
+
+    // G: Toggle Stats & Fleet Command Matrix dashboard
+    if (_navLevel != NavigationLevel.editingRootPath &&
+        !event.isShiftPressed &&
+        (event.character?.toLowerCase() == 'g' || event.logicalKey == LogicalKey.keyG)) {
+      setState(() {
+        if (_navLevel == NavigationLevel.stats || _navLevel == NavigationLevel.fleetMatrix) {
+          _navLevel = NavigationLevel.topMenu;
+          _setStatus('Returned to Top Menu.');
+        } else {
+          _navLevel = NavigationLevel.stats;
+          if (_focusedStatsAccountIndex >= _accounts.length) {
+            _focusedStatsAccountIndex = 0;
+          }
+          _pollStats();
+          _setStatus('Stats & Fleet Matrix: Press ↑/↓ to browse, Enter to inspect stats, Space to queue, G to close.');
+        }
+      });
+      return true;
     }
 
     // R (without Shift): Run
@@ -1089,6 +1447,18 @@ class _MainScreenState extends State<MainScreen> {
       } else if (_navLevel == NavigationLevel.accounts) {
         if (_accounts.isNotEmpty && _focusedAccountIndex < _accounts.length) {
           final account = _accounts[_focusedAccountIndex];
+          final queuedForAccount = _selectedQueue.where((t) => t.account.name == account.name).toList();
+          if (queuedForAccount.isNotEmpty) {
+            _switchOrReloadConfig(account, queuedForAccount.first.configName);
+          } else {
+            _digIntoAccount(account);
+            _setStatus('Dig into "${_getAccountDisplayName(account.name)}": highlight the new config and press S to switch.');
+          }
+          return true;
+        }
+      } else if (_navLevel == NavigationLevel.fleetMatrix || _navLevel == NavigationLevel.stats) {
+        if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
+          final account = _accounts[_focusedStatsAccountIndex];
           final queuedForAccount = _selectedQueue.where((t) => t.account.name == account.name).toList();
           if (queuedForAccount.isNotEmpty) {
             _switchOrReloadConfig(account, queuedForAccount.first.configName);
@@ -1203,9 +1573,10 @@ class _MainScreenState extends State<MainScreen> {
           _executeCopyConfig();
           break;
         case NavigationLevel.stats:
+        case NavigationLevel.fleetMatrix:
           if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
             final targetAccount = _accounts[_focusedStatsAccountIndex];
-            _digIntoExpandedStats(targetAccount);
+            _digIntoExpandedStats(targetAccount, _navLevel);
           }
           break;
         case NavigationLevel.expandedStats:
@@ -1253,6 +1624,12 @@ class _MainScreenState extends State<MainScreen> {
           final configName = account.configs[_focusedConfigIndex];
           _toggleConfigSelection(account, configName);
         }
+      } else if (_navLevel == NavigationLevel.fleetMatrix || _navLevel == NavigationLevel.stats) {
+        if (_accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length) {
+          final account = _accounts[_focusedStatsAccountIndex];
+          _toggleFleetAccountQueue(account);
+        }
+        return true;
       } else if (_navLevel == NavigationLevel.accounts) {
         if (_accounts.isNotEmpty) {
           _digIntoAccount(_accounts[_focusedAccountIndex]);
@@ -1304,6 +1681,9 @@ class _MainScreenState extends State<MainScreen> {
       case NavigationLevel.expandedStats:
         leftPaneTitle = 'EXPANDED TELEMETRY';
         break;
+      case NavigationLevel.fleetMatrix:
+        leftPaneTitle = 'FLEET COMMAND MATRIX';
+        break;
     }
 
     return Focusable(
@@ -1340,44 +1720,58 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const Divider(),
 
-          // Main View (Full-width Single Pane for About / Expanded Stats, or Split Pane for Menus)
+          // Main View (Full-width Single Pane for About / Expanded Stats / Fleet Matrix / Escape Menu, or Split Pane for Menus)
           Expanded(
-            child: _navLevel == NavigationLevel.about
+            child: _isEscapeMenuOpen
                 ? PaneBox(
-                    title: 'ABOUT & CHANGELOG',
+                    title: 'QUICK MENU & HOTKEY CHEATSHEET [ESC]',
                     isFocused: true,
-                    child: _buildAboutContent(),
+                    borderColor: Colors.yellow,
+                    headerStyle: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold),
+                    child: _buildEscapeMenuContent(),
                   )
-                : (_navLevel == NavigationLevel.expandedStats
+                : (_navLevel == NavigationLevel.about
                     ? PaneBox(
-                        title: _expandedStatsTitle(),
+                        title: 'ABOUT & CHANGELOG',
                         isFocused: true,
-                        child: _buildExpandedStatsContent(),
+                        child: _buildAboutContent(),
                       )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Left Pane: Menu Stack
-                          Expanded(
-                            child: PaneBox(
-                              title: leftPaneTitle,
-                              isFocused: true,
-                              headerStyle: _navLevel == NavigationLevel.copyConfig
-                                  ? LawnchairTheme.paneHeaderCopy
-                                  : null,
-                              borderColor: _navLevel == NavigationLevel.copyConfig
-                                  ? Colors.yellow
-                                  : null,
-                              child: _buildLeftPaneContent(),
-                            ),
-                          ),
+                    : (_navLevel == NavigationLevel.expandedStats
+                        ? PaneBox(
+                            title: _expandedStatsTitle(),
+                            isFocused: true,
+                            child: _buildExpandedStatsContent(),
+                          )
+                        : (_navLevel == NavigationLevel.fleetMatrix || _navLevel == NavigationLevel.stats
+                            ? PaneBox(
+                                title: 'FLEET TELEMETRY & STATS [${_accounts.length} ACCOUNTS]',
+                                isFocused: true,
+                                child: _buildFleetMatrixContent(),
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Left Pane: Menu Stack
+                                  Expanded(
+                                    child: PaneBox(
+                                      title: leftPaneTitle,
+                                      isFocused: true,
+                                      headerStyle: _navLevel == NavigationLevel.copyConfig
+                                          ? LawnchairTheme.paneHeaderCopy
+                                          : null,
+                                      borderColor: _navLevel == NavigationLevel.copyConfig
+                                          ? Colors.yellow
+                                          : null,
+                                      child: _buildLeftPaneContent(),
+                                    ),
+                                  ),
 
-                          // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
-                          Expanded(
-                            child: _buildRightPane(),
-                          ),
-                        ],
-                      )),
+                                  // Right Pane: Contextual (Selected Queue / Hotkeys / Settings)
+                                  Expanded(
+                                    child: _buildRightPane(),
+                                  ),
+                                ],
+                              )))),
           ),
 
           // Footer & Status Bar
@@ -1388,6 +1782,8 @@ class _MainScreenState extends State<MainScreen> {
             isObfuscated: _isObfuscated,
             isCopyMode: _navLevel == NavigationLevel.copyConfig,
             canCopy: _navLevel == NavigationLevel.configs,
+            isFleetMatrix: _navLevel == NavigationLevel.fleetMatrix || _navLevel == NavigationLevel.stats,
+            isEscapeMenu: _isEscapeMenuOpen,
           ),
         ],
       ),
@@ -1665,6 +2061,7 @@ class _MainScreenState extends State<MainScreen> {
 
       case NavigationLevel.about:
       case NavigationLevel.expandedStats:
+      case NavigationLevel.fleetMatrix:
         return const SizedBox();
     }
   }
@@ -1814,7 +2211,13 @@ class _MainScreenState extends State<MainScreen> {
     // If on Top Menu and focused on Hotkeys, show Hotkeys reference
     if (_navLevel == NavigationLevel.topMenu) {
       final activeItem = TopMenuItem.values[_focusedTopMenuIndex];
-      if (activeItem == TopMenuItem.hotkeys) {
+      if (activeItem == TopMenuItem.stats) {
+        return PaneBox(
+          title: 'FLEET MATRIX PREVIEW',
+          isFocused: false,
+          child: _buildFleetPreviewContent(),
+        );
+      } else if (activeItem == TopMenuItem.hotkeys) {
         return PaneBox(
           title: 'HOTKEYS REFERENCE',
           isFocused: false,
@@ -1831,16 +2234,6 @@ class _MainScreenState extends State<MainScreen> {
           title: 'ABOUT & CHANGELOG SUMMARY',
           isFocused: false,
           child: _buildAboutPreviewContent(),
-        );
-      } else if (activeItem == TopMenuItem.stats) {
-        final focusedAccount = _accounts.isNotEmpty && _focusedStatsAccountIndex < _accounts.length
-            ? _accounts[_focusedStatsAccountIndex]
-            : (_accounts.isNotEmpty ? _accounts.first : null);
-        final titleName = focusedAccount != null ? _getAccountDisplayName(focusedAccount.name) : '';
-        return PaneBox(
-          title: focusedAccount != null ? 'ACCOUNT STATS: $titleName' : 'ACCOUNT STATS',
-          isFocused: false,
-          child: _buildAccountStatsDetails(focusedAccount),
         );
       }
     } else if (_navLevel == NavigationLevel.copyConfig) {
@@ -1951,12 +2344,15 @@ class _MainScreenState extends State<MainScreen> {
             const Text('Global Actions:', style: LawnchairTheme.titleStyle),
             const SizedBox(height: 1),
             _hotkeyRow('R', 'Launch all queued accounts sequentially'),
+            _hotkeyRow('G', 'Toggle Fleet Command Matrix multi-bot overview grid'),
+            _hotkeyRow('Esc', 'Open Quick Menu & Hotkey Cheatsheet modal (with Settings jump)'),
             _hotkeyRow('S', 'Hot-swap or reload focused config for bot instantly'),
             _hotkeyRow('Shift+S', 'Batch switch all selected or matching account configs at once'),
             _hotkeyRow('C', 'Copy focused config to other accounts interactively (Yellow mode)'),
             _hotkeyRow('K', 'Kill / Terminate focused running bot process'),
             _hotkeyRow('O', 'Toggle Obfuscate / Streamer Mode (mask names & IPs)'),
             _hotkeyRow('Shift+R', 'Re-scan root directory and refresh cached configs'),
+            _hotkeyRow('Shift+L', 'Clean old log files across all accounts (protects active bots)'),
             _hotkeyRow('Q', 'Quit Astra Lawnchair from anywhere'),
             _hotkeyRow('Mouse Tap', 'Click any row to focus, open, or toggle'),
           ],
@@ -2004,7 +2400,7 @@ class _MainScreenState extends State<MainScreen> {
             Row(
               children: const [
                 Text('Astra Lawnchair ', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
-                Text('v0.1.5', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('v0.1.8', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 Spacer(),
                 Text('by Joshh3ro', style: LawnchairTheme.footerDesc),
               ],
@@ -2018,15 +2414,18 @@ class _MainScreenState extends State<MainScreen> {
             const Divider(),
             const SizedBox(height: 1),
             const Text(
-              'Latest Updates (v0.1.5):',
+              'Latest Updates (v0.1.8):',
               style: LawnchairTheme.statSectionHeader,
             ),
             const SizedBox(height: 1),
+            _changelogPreviewBullet('Fleet Session Log API', 'Persistent snapshot logging & live session delta tracking'),
+            _changelogPreviewBullet('astral CLI Executable', 'Direct console launch options (-r, -o, -g, -c, -s, --dry-run)'),
+            _changelogPreviewBullet('Escape Quick Menu (Esc)', 'Global cheatsheet modal with direct action shortcuts'),
+            _changelogPreviewBullet('Unified Fleet Matrix (G)', 'Multi-bot telemetry grid merged into Stats'),
+            _changelogPreviewBullet('Log Cleaner (Shift+L)', 'One-key log sweep with running bot protection'),
+            _changelogPreviewBullet('Config Copying (C)', 'Interactive multi-account duplication workspace'),
             _changelogPreviewBullet('Batch Config Switch (Shift+S)', 'Switch all selected or matching accounts at once'),
-            _changelogPreviewBullet('In-Place Config Hot-Swap (S)', 'Fast restart with native profile parameter'),
-            _changelogPreviewBullet('Full-Screen Expanded Stats', 'ASCII graphs & multi-column loot breakdown'),
-            _changelogPreviewBullet('Loot Categorization', 'Trinity, ammo, resources & minerals sorted'),
-            _changelogPreviewBullet('Auto-Start Bot Support', 'AstraBot execution via --auto-start config'),
+            _changelogPreviewBullet('In-Place Hot-Swap (S)', 'Fast restart with native profile parameter'),
             const SizedBox(height: 1),
             const Divider(),
             const SizedBox(height: 1),
@@ -2494,7 +2893,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 1),
             const Text(
-              'Version 0.1.5 | Created by Joshh3ro | Built with Nocterm',
+              'Version 0.1.8 | Created by Joshh3ro | Built with Nocterm',
               style: LawnchairTheme.footerDesc,
               textAlign: TextAlign.center,
             ),
@@ -2525,16 +2924,61 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 2),
 
+            // Release V0.1.8 A
+            _aboutReleaseCard(
+              version: 'V0.1.8 A (Latest Update)',
+              date: '2026-10-23',
+              highlights: [
+                'Fleet Session Stats Logging & Delta Calculation API: Structured persistence (configs/fleet_sessions.json) tracking overall fleet telemetry snapshots, automatic session baseline capture, and real-time session delta calculations.',
+                'Live Session Delta Telemetry Bar: Displays cumulative session change (Δ SESSION: Uri, EP, Honor, Deaths, Duration) in the Fleet Command Matrix and preview cards.',
+                'astral Command-Line Executable: Added standalone binary configuration (executables: astral: astral) allowing operators to run astral directly from any terminal.',
+                'Console Launch Options & Flags: Robust CLI options parsing for -r/--root, -o/--streamer, -g/--fleet, -c/--client, -s/--stagger, --dry-run, --clean-logs, --fleet-stats, -v/--version, and -h/--help.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.7 A
+            _aboutReleaseCard(
+              version: 'V0.1.7 A',
+              date: '2026-10-22',
+              highlights: [
+                'Escape Quick Menu & Hotkey Cheatsheet Modal (Esc Hotkey): Global modal overlay accessible from any screen providing immediate access to essential controls and a categorized 3-column hotkey cheatsheet.',
+                'Instant Settings Navigation (S Hotkey): Direct [S] shortcut or arrow-select + Enter jumps directly from the Escape Quick Menu into Settings & Preferences.',
+                'Streamlined Contextual Footer Bar: Condensed bottom hotkey bar by featuring Esc:menu while keeping full command visibility.',
+                'Integrated Streamer Mode Toggle: Directly toggle obfuscation (O) from within the Escape Quick Menu with live state reflection.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Release V0.1.6 A
+            _aboutReleaseCard(
+              version: 'V0.1.6 A',
+              date: '2026-10-22',
+              highlights: [
+                'Unified Stats & Fleet Matrix Dashboard (G Hotkey): Merged Fleet Command Matrix into the primary Stats view, eliminating menu clutter and displaying live status, configs, uptimes, 20-col maps, earnings, velocities, and deaths across all accounts simultaneously.',
+                'Fleet-Wide Experience (EP) & Honor Telemetry: Added aggregated totals and hourly velocities to top menu preview card, dedicated pulse bar summary tiles, and matrix table columns with dynamic rate shortening (>10M) and custom log parsing.',
+                'Optimized Map Width & Spacing: Expanded MAP column to 20 characters to comfortably accommodate long event maps and Galaxy Gates without truncation. Rebalanced column spacing across URI, URI/HR, EP, and HONOR for generous breathing room, and removed redundant arrow pointers.',
+                'On-Demand Log Cleaner (Shift+L Hotkey): One-key instant sweep of stale AstraBot log files across all accounts with running bot session protection and disk space recovery reporting.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
             // Release V0.1.5 A
             _aboutReleaseCard(
-              version: 'V0.1.5 A (Latest Update)',
-              date: '2026-09-21',
+              version: 'V0.1.5 A',
+              date: '2026-09-24',
               highlights: [
+                'Interactive Multi-Account Config Copying (C Hotkey): Duplicate configurations directly between accounts with dedicated yellow-themed selection workspace, [NEW] and [OVERWRITE] badges, and batch toggles.',
                 'Batch Bot Configuration Switching (Shift+S Hotkey): One-step batch switching and hot-swapping across all accounts that possess the focused config, or across all queued targets.',
                 'Automated In-Place Config Hot-Swapping (S Hotkey): Instantly switch or reload any single bot\'s config with process termination verification and native profile launching.',
                 'Native Profile Launching: Passes --config "<name>" directly to the AstraBot executable without modifying or corrupting root configuration files.',
                 'Process Death Verification: Polling check confirms previous process is fully dead in the OS before spawning the replacement instance.',
-                'Footer Bar and Documentation Polish: Added Shift+S shortcut indicators, modernized GitHub badges in README, and updated changelogs.',
               ],
             ),
             const SizedBox(height: 1),
@@ -2672,4 +3116,594 @@ class _MainScreenState extends State<MainScreen> {
       ],
     );
   }
+
+  Component _buildFleetPreviewContent() {
+    int runningCount = 0;
+    int totalUridium = 0;
+    double totalVelocity = 0;
+    int totalExperience = 0;
+    double totalExperienceVelocity = 0;
+    int totalHonor = 0;
+    double totalHonorVelocity = 0;
+    int totalDeaths = 0;
+
+    for (final account in _accounts) {
+      if (_processTracker.isRunning(account.name)) {
+        runningCount++;
+      }
+      final stats = _statTracker.getStats(account.name);
+      if (stats != null) {
+        totalUridium += stats.uridium;
+        totalVelocity += stats.uridiumPerHour;
+        totalExperience += stats.experience;
+        totalExperienceVelocity += stats.experiencePerHour;
+        totalHonor += stats.honor;
+        totalHonorVelocity += stats.honorPerHour;
+        totalDeaths += stats.deathCount;
+      }
+    }
+
+    final currentSnapshot = _buildCurrentFleetSnapshot();
+    final sessionDelta = _fleetLogService.calculateSessionDelta(currentSnapshot);
+
+    return Container(
+      padding: const EdgeInsets.all(1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('FLEET OVERVIEW AT A GLANCE', style: LawnchairTheme.statSectionHeader),
+          const SizedBox(height: 1),
+          const Text(
+            'The Fleet Command Matrix compiles all accounts into an interactive real-time grid.',
+            style: LawnchairTheme.footerDesc,
+          ),
+          const SizedBox(height: 1),
+          const Divider(),
+          const SizedBox(height: 1),
+          _statRow('Total Accounts', '${_accounts.length}'),
+          _statRow('Running Bots', '$runningCount / ${_accounts.length} active'),
+          _statRow('Queued Targets', '${_selectedQueue.length} staged'),
+          _statRow('Session Uridium', '+${NumberFormatter.formatNumber(totalUridium)}', '+${NumberFormatter.formatRate(totalVelocity)}/h'),
+          _statRow('Experience (EP)', '+${NumberFormatter.formatNumber(totalExperience)}', '+${NumberFormatter.formatRate(totalExperienceVelocity)}/h'),
+          _statRow('Honor Points', '+${NumberFormatter.formatNumber(totalHonor)}', '+${NumberFormatter.formatRate(totalHonorVelocity)}/h'),
+          _statRow('Fleet Deaths', '$totalDeaths'),
+          if (sessionDelta != null) ...[
+            _statRow('Session Delta (Δ)', '+${NumberFormatter.formatNumber(sessionDelta.uridiumDelta)} Uri', sessionDelta.formattedDuration),
+          ],
+          const SizedBox(height: 1),
+          const Divider(),
+          const SizedBox(height: 1),
+          const Text('Shortcuts:', style: LawnchairTheme.footerKey),
+          const Text('• Press Enter or G to open full Fleet Matrix', style: LawnchairTheme.itemNormal),
+          const Text('• Press Up/Down to navigate accounts', style: LawnchairTheme.itemNormal),
+          const Text('• Press Enter on any bot to inspect stats', style: LawnchairTheme.itemNormal),
+          const Text('• Press Space to queue, K to kill, S to switch', style: LawnchairTheme.itemNormal),
+        ],
+      ),
+    );
+  }
+
+  Component _buildFleetMatrixContent() {
+    if (_accounts.isEmpty) {
+      return const Center(
+        child: Text(
+          'No accounts detected in root path.\nConfigure root folder in Settings.',
+          style: LawnchairTheme.statusInfo,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    int runningCount = 0;
+    final queuedAccountNames = _selectedQueue.map((t) => t.account.name).toSet();
+    int totalUridium = 0;
+    double totalVelocity = 0;
+    int totalExperience = 0;
+    double totalExperienceVelocity = 0;
+    int totalHonor = 0;
+    double totalHonorVelocity = 0;
+    int totalDeaths = 0;
+
+    for (final account in _accounts) {
+      if (_processTracker.isRunning(account.name)) {
+        runningCount++;
+      }
+      final stats = _statTracker.getStats(account.name);
+      if (stats != null) {
+        totalUridium += stats.uridium;
+        totalVelocity += stats.uridiumPerHour;
+        totalExperience += stats.experience;
+        totalExperienceVelocity += stats.experiencePerHour;
+        totalHonor += stats.honor;
+        totalHonorVelocity += stats.honorPerHour;
+        totalDeaths += stats.deathCount;
+      }
+    }
+
+    return SingleChildScrollView(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top Fleet Aggregate Bar
+            Container(
+              decoration: BoxDecoration(
+                border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _fleetMetricTile(
+                      label: 'FLEET BOTS',
+                      value: '$runningCount/${_accounts.length} Running',
+                      subvalue: '(${queuedAccountNames.length} Queued)',
+                      valueColor: runningCount > 0 ? Colors.green : Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 1),
+                  Expanded(
+                    child: _fleetMetricTile(
+                      label: 'TOTAL URIDIUM',
+                      value: '+${NumberFormatter.formatNumber(totalUridium)}',
+                      subvalue: '+${NumberFormatter.formatRate(totalVelocity)}/h',
+                      valueColor: Colors.yellow,
+                    ),
+                  ),
+                  const SizedBox(width: 1),
+                  Expanded(
+                    child: _fleetMetricTile(
+                      label: 'TOTAL EXP (EP)',
+                      value: '+${NumberFormatter.formatNumber(totalExperience)}',
+                      subvalue: '+${NumberFormatter.formatRate(totalExperienceVelocity)}/h',
+                      valueColor: Colors.cyan,
+                    ),
+                  ),
+                  const SizedBox(width: 1),
+                  Expanded(
+                    child: _fleetMetricTile(
+                      label: 'TOTAL HONOR',
+                      value: '+${NumberFormatter.formatNumber(totalHonor)}',
+                      subvalue: '+${NumberFormatter.formatRate(totalHonorVelocity)}/h',
+                      valueColor: Colors.magenta,
+                    ),
+                  ),
+                  const SizedBox(width: 1),
+                  Expanded(
+                    child: _fleetMetricTile(
+                      label: 'TOTAL DEATHS',
+                      value: '$totalDeaths',
+                      subvalue: 'fleet ship losses',
+                      valueColor: totalDeaths > 0 ? Colors.red : Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 1),
+
+            // Session Delta Change Bar
+            if (_fleetLogService.calculateSessionDelta(_buildCurrentFleetSnapshot()) case final delta?) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: Row(
+                  children: [
+                    const Text('Δ SESSION: ', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                    Text('Uri: +${NumberFormatter.formatNumber(delta.uridiumDelta)} ', style: const TextStyle(color: Colors.yellow)),
+                    Text('EP: +${NumberFormatter.formatNumber(delta.experienceDelta)} ', style: const TextStyle(color: Colors.cyan)),
+                    Text('Honor: +${NumberFormatter.formatNumber(delta.honorDelta)} ', style: const TextStyle(color: Colors.magenta)),
+                    Text('Deaths: ${delta.deathsDelta} ', style: TextStyle(color: delta.deathsDelta > 0 ? Colors.red : Colors.green)),
+                    const Spacer(),
+                    Text('Duration: ${delta.formattedDuration}', style: LawnchairTheme.footerDesc),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 1),
+            ],
+
+            // Table Column Headers
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: Row(
+                children: const [
+                  SizedBox(width: 10, child: Text('STATUS', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 17, child: Text('ACCOUNT', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 13, child: Text('CONFIG', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 8, child: Text('UPTIME', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 20, child: Text('MAP', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 11, child: Text('URI', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 10, child: Text('URI/HR', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 13, child: Text('EP', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 12, child: Text('HONOR', style: LawnchairTheme.matrixHeader)),
+                  SizedBox(width: 7, child: Text('DEATHS', style: LawnchairTheme.matrixHeader)),
+                ],
+              ),
+            ),
+            const Divider(),
+
+            // Data Rows
+            for (var i = 0; i < _accounts.length; i++) ...[
+              _buildFleetMatrixRow(i, _accounts[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _fleetMetricTile({
+    required String label,
+    required String value,
+    required String subvalue,
+    required Color valueColor,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: LawnchairTheme.footerKey),
+        Text(value, style: TextStyle(color: valueColor, fontWeight: FontWeight.bold)),
+        Text(subvalue, style: LawnchairTheme.footerDesc),
+      ],
+    );
+  }
+
+  Component _buildFleetMatrixRow(int index, Account account) {
+    final isFocused = index == _focusedStatsAccountIndex;
+    final isRunning = _processTracker.isRunning(account.name);
+    final runningSession = _processTracker.getSession(account.name);
+    final isQueued = _selectedQueue.any((t) => t.account.name == account.name);
+
+    String statusText;
+    Color statusColor;
+    if (isRunning) {
+      statusText = '● RUNNING';
+      statusColor = Colors.green;
+    } else if (isQueued) {
+      statusText = '  QUEUED';
+      statusColor = Colors.cyan;
+    } else {
+      statusText = '○ IDLE';
+      statusColor = Colors.gray;
+    }
+
+    final displayName = _getAccountDisplayName(account.name);
+    final configName = runningSession?.configName ??
+        (_selectedQueue.where((t) => t.account.name == account.name).firstOrNull?.configName ??
+            (account.configs.isNotEmpty ? account.configs.first : '--'));
+
+    final uptime = runningSession?.formattedUptime ?? '--';
+
+    final stats = _statTracker.getStats(account.name);
+    final rawMap = (stats != null && stats.currentMap.isNotEmpty) ? stats.currentMap : '--';
+    final cleanedMap = rawMap.replaceAll('**', '').replaceAll('*', '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final mapName = cleanedMap.length > 19 ? '${cleanedMap.substring(0, 18)}…' : (cleanedMap.isEmpty ? '--' : cleanedMap);
+    final uridiumText = stats != null ? '+${NumberFormatter.formatNumber(stats.uridium)}' : '+0';
+    final uriPerHourText = stats != null ? '+${NumberFormatter.formatRate(stats.uridiumPerHour)}/h' : '+0/h';
+    final epValue = stats?.experience ?? 0;
+    final epText = stats != null
+        ? '+${epValue >= 10000000 ? NumberFormatter.formatRate(epValue.toDouble()) : NumberFormatter.formatNumber(epValue)}'
+        : '+0';
+    final honorValue = stats?.honor ?? 0;
+    final honorText = stats != null
+        ? '+${honorValue >= 10000000 ? NumberFormatter.formatRate(honorValue.toDouble()) : NumberFormatter.formatNumber(honorValue)}'
+        : '+0';
+    final deathsCount = stats?.deathCount ?? 0;
+    final deathsText = '$deathsCount';
+
+    TextStyle textStyle(Color defaultColor, {bool bold = false}) {
+      if (isFocused) {
+        return TextStyle(color: Colors.black, fontWeight: bold ? FontWeight.bold : FontWeight.normal);
+      }
+      return TextStyle(color: defaultColor, fontWeight: bold ? FontWeight.bold : FontWeight.normal);
+    }
+
+    final rowContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      decoration: isFocused
+          ? const BoxDecoration(
+              color: Colors.cyan,
+            )
+          : null,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 10,
+            child: Text(
+              statusText,
+              style: textStyle(statusColor, bold: true),
+            ),
+          ),
+          SizedBox(
+            width: 17,
+            child: Text(
+              displayName.length > 15 ? '${displayName.substring(0, 14)}…' : displayName,
+              style: textStyle(Colors.white, bold: isFocused),
+            ),
+          ),
+          SizedBox(
+            width: 13,
+            child: Text(
+              configName.length > 11 ? '${configName.substring(0, 10)}…' : configName,
+              style: textStyle(Colors.yellow),
+            ),
+          ),
+          SizedBox(
+            width: 8,
+            child: Text(
+              uptime,
+              style: textStyle(Colors.cyan),
+            ),
+          ),
+          SizedBox(
+            width: 20,
+            child: Text(
+              mapName,
+              style: textStyle(Colors.magenta),
+            ),
+          ),
+          SizedBox(
+            width: 11,
+            child: Text(
+              uridiumText,
+              style: textStyle(Colors.yellow, bold: true),
+            ),
+          ),
+          SizedBox(
+            width: 10,
+            child: Text(
+              uriPerHourText,
+              style: textStyle(Colors.green, bold: true),
+            ),
+          ),
+          SizedBox(
+            width: 13,
+            child: Text(
+              epText,
+              style: textStyle(Colors.cyan, bold: true),
+            ),
+          ),
+          SizedBox(
+            width: 12,
+            child: Text(
+              honorText,
+              style: textStyle(Colors.magenta, bold: true),
+            ),
+          ),
+          SizedBox(
+            width: 7,
+            child: Text(
+              deathsText,
+              style: textStyle(deathsCount > 0 ? Colors.red : Colors.gray, bold: deathsCount > 0),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _focusedStatsAccountIndex = index;
+        });
+      },
+      child: rowContent,
+    );
+  }
+
+  Component _buildEscapeMenuContent() {
+    return SingleChildScrollView(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Quick Navigation Actions Header
+            const Text(
+              'QUICK ACTIONS (Press [Key] or ↑/↓ to select and Enter):',
+              style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 1),
+
+            // Action Items
+            for (int i = 0; i < _escapeActions.length; i++) ...[
+              _buildEscapeActionRow(i, _escapeActions[i]),
+            ],
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Hotkey Reference Section
+            const Text(
+              'KEYBOARD SHORTCUTS & CONTROLS CHEATSHEET',
+              style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 1),
+
+            // 3-Column Categorized Reference
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Col 1: Navigation & Views
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Navigation & Views:', style: LawnchairTheme.statSubSectionHeader),
+                        const Divider(),
+                        _cheatsheetRow('↑ / ↓', 'Move focus in lists'),
+                        _cheatsheetRow('Enter', 'Open config / inspect'),
+                        _cheatsheetRow('Bksp', 'Back to parent menu'),
+                        _cheatsheetRow('Esc', 'Toggle Quick Menu'),
+                        _cheatsheetRow('G', 'Stats & Fleet Matrix'),
+                        _cheatsheetRow('Q', 'Quit Astra Lawnchair'),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+
+                // Col 2: Bot Management & Launching
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Bot Management:', style: LawnchairTheme.statSubSectionHeader),
+                        const Divider(),
+                        _cheatsheetRow('Space', 'Queue / unqueue bot'),
+                        _cheatsheetRow('R', 'Launch queued bots'),
+                        _cheatsheetRow('K', 'Kill / stop bot process'),
+                        _cheatsheetRow('S', 'Hot-swap config in-place'),
+                        _cheatsheetRow('Shift+S', 'Batch switch accounts'),
+                        _cheatsheetRow('C', 'Duplicate config (Yellow)'),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+
+                // Col 3: Maintenance & Privacy
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: BoxBorder.all(color: LawnchairTheme.borderNormal),
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('System & Privacy:', style: LawnchairTheme.statSubSectionHeader),
+                        const Divider(),
+                        _cheatsheetRow('Shift+L', 'Clean stale log files'),
+                        _cheatsheetRow('Shift+R', 'Refresh cache from disk'),
+                        _cheatsheetRow('O', 'Toggle Streamer Mode'),
+                        _cheatsheetRow('1 - 4', 'Toggle series in graphs'),
+                        _cheatsheetRow('A', 'Select all in Copy tool'),
+                        _cheatsheetRow('Esc', 'Close menu & resume'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
+            // Hint
+            const Text(
+              'Press Esc or Backspace to resume  •  Press S for Settings  •  Press Q to quit',
+              style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Component _buildEscapeActionRow(int index, _EscapeAction action) {
+    final isFocused = index == _focusedEscapeActionIndex;
+    final rowContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
+      decoration: isFocused
+          ? const BoxDecoration(
+              color: Colors.cyan,
+            )
+          : null,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 10,
+            child: Text(
+              '[${action.keyHint}]',
+              style: TextStyle(
+                color: isFocused ? Colors.black : Colors.yellow,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 28,
+            child: Text(
+              action.title,
+              style: TextStyle(
+                color: isFocused ? Colors.black : Colors.white,
+                fontWeight: isFocused ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              action.description,
+              style: TextStyle(
+                color: isFocused ? Colors.black : Colors.gray,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _focusedEscapeActionIndex = index;
+        });
+        action.onSelect();
+      },
+      child: rowContent,
+    );
+  }
+
+  static Component _cheatsheetRow(String key, String desc) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 0),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 9,
+            child: Text(
+              key,
+              style: const TextStyle(
+                color: Colors.yellow,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const Text(' ', style: LawnchairTheme.footerDesc),
+          Expanded(
+            child: Text(
+              desc,
+              style: LawnchairTheme.footerDesc,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EscapeAction {
+  final String keyHint;
+  final String title;
+  final String description;
+  final VoidCallback onSelect;
+
+  const _EscapeAction({
+    required this.keyHint,
+    required this.title,
+    required this.description,
+    required this.onSelect,
+  });
 }

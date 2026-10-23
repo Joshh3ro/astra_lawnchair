@@ -313,9 +313,9 @@ class StatTrackerService {
           newUri += amount;
         } else if (rawResource == 'credits' || rawResource == 'credit') {
           newCredits += amount;
-        } else if (rawResource == 'experience' || rawResource == 'xp') {
+        } else if (rawResource == 'experience' || rawResource == 'xp' || rawResource == 'experience points' || rawResource == 'ep') {
           newXp += amount;
-        } else if (rawResource == 'honour' || rawResource == 'honor') {
+        } else if (rawResource == 'honour' || rawResource == 'honor' || rawResource == 'honor points' || rawResource == 'honour points') {
           newHonor += amount;
         } else {
           // Loot item or special material
@@ -395,7 +395,12 @@ class StatTrackerService {
       // Check map
       final mapMatch = _mapRegex.firstMatch(line);
       if (mapMatch != null) {
-        currentMap = mapMatch.group(1)?.trim() ?? currentMap;
+        var parsedMap = mapMatch.group(1)?.trim() ?? currentMap;
+        // Strip markdown bold/italic tags frequently emitted in bot logs (e.g., "Trial of Terror **7**")
+        parsedMap = parsedMap.replaceAll('**', '').replaceAll('*', '').trim();
+        if (parsedMap.isNotEmpty) {
+          currentMap = parsedMap;
+        }
       }
 
       // Check errors and states

@@ -1,3 +1,71 @@
+## V0.1.8 A
+
+- Fleet Session Stats Logging & Delta Calculation API
+    > Structured overall telemetry snapshot persistence and real-time session delta calculation
+    - **Fleet Snapshot Model (`FleetStatsSnapshot`)**: Serializes overall fleet metrics (total Uridium, EP, Honor, Credits, Deaths, active bots, and per-account contributions) with ISO timestamps and session IDs
+    - **Session Delta Engine (`FleetStatsDelta`)**: Calculates cumulative gains, deaths, elapsed duration, and effective hourly velocities against automatic session baselines
+    - **Persistent History Service (`FleetLogService`)**: Manages `configs/fleet_sessions.json` with automatic history loading, FIFO pruning (max 500 records), and query filters
+    - **Live Delta Bar in Fleet Matrix**: Displays real-time session progress (`Δ SESSION: Uri, EP, Honor, Deaths, Duration`) directly above the matrix columns and in Top Menu preview cards
+
+- `astral` CLI Executable & Console Launch Options
+    > Standalone terminal binary and flexible CLI argument flags for automated or direct execution
+    - **Executable Configuration (`pubspec.yaml`)**: Registered `executables: astral: astral` and `astra_lawnchair: astra_lawnchair` for global path access
+    - **CLI Options Parser (`CliOptions`)**: Supports flags:
+        - `-r, --root <path>`: Override or pre-set AstraBot root folder path
+        - `-c, --client <name>`: Override client parameter (`Unity` / `Flash`)
+        - `-s, --stagger <ms>`: Configure launch delay
+        - `-o, --streamer`: Start directly in obfuscation / streamer mode
+        - `-g, --fleet`: Open directly into Fleet Command Matrix
+        - `--stats`: Open directly into Account Stats view
+        - `--dry-run`: Safe simulated bot launching
+        - `--clean-logs`: Standalone log cleaner execution across accounts and exit
+        - `--fleet-stats`: Output latest fleet telemetry snapshot to stdout and exit
+        - `-v, --version`: Print version
+        - `-h, --help`: Display formatted terminal usage guide
+
+## V0.1.7 A
+
+- Escape Quick Menu & Hotkey Cheatsheet Modal (`Esc` Hotkey)
+    > Global modal overlay accessible from any screen providing immediate access to essential controls and a categorized 3-column cheatsheet
+    - **Global Escape Key Interception**: Press `Esc` from any screen or view in the application to instantly open the Quick Menu overlay, providing a safe pause state that prevents accidental background actions
+    - **Interactive Quick Action List**: Keyboard-driven action menu (`Up`/`Down` navigation and `Enter` selection) with direct single-key accelerator shortcuts:
+        - `[S]` Settings & Preferences: Direct fast-jump to client selection, launch stagger delay, auto-start, and root folder configuration
+        - `[G]` Stats & Fleet Matrix: Quick transition into the live multi-bot telemetry grid
+        - `[A]` Accounts & Launch Queue: Rapid switch to account management and queue staging
+        - `[O]` Streamer Mode: Toggle live account obfuscation on and off directly from within the modal
+        - `[Shift+L]` Sweep Stale Logs: Instant log cleaner sweep across accounts with running bot protection
+        - `[Esc]` Resume Session: Close the menu and return to the active workflow
+    - **Categorized 3-Column Hotkey Cheatsheet**:
+        - Displays a structured reference table organized into `Navigation & Views:`, `Bot Management:`, and `System & Privacy:`
+        - Solves footer overcrowding by moving comprehensive key guidance into an accessible, high-visibility overlay
+    - **Streamlined Contextual Footer Bar**:
+        - Updated bottom footer to feature `Esc:menu` across all standard views, reducing visual clutter while preserving full key functionality
+        - Contextual footer display when Quick Menu is active: `Enter:select`, `Esc:close`, `S:settings`, `G:fleet`, `A:accounts`, `O:hide/reveal`, `Shift+L:clean`, `Q:quit`
+
+## V0.1.6 A
+
+- Unified Stats & Fleet Command Matrix Dashboard (`G` Hotkey & Top Menu)
+    > High-density real-time multi-bot overview grid merged directly into the primary Stats view
+    - **Unified Telemetry Hub**: Seamlessly integrated the Fleet Command Matrix into the primary Stats view (`NavigationLevel.stats`), eliminating top-menu duplication while retaining global `G` hotkey quick-jump from anywhere
+    - **Real-Time Multi-Bot Grid**: Multi-column ASCII table showing Status (`● RUNNING`, `  QUEUED`, `○ IDLE`), Account name, Active/staged Config, Live Uptime, Current Map, Session Uridium, Hourly Velocity (`Uri/hr`), Experience (`EP`), Honor (`HONOR`), and Ship Deaths across every account simultaneously
+    - **Fleet Overview Experience (EP) & Honor Telemetry**:
+        - Added fleet-wide Experience Points and Honor Point totals with real-time hourly velocities to the Top Menu right-pane preview card
+        - Added dedicated `TOTAL EXP (EP)` (Cyan) and `TOTAL HONOR` (Magenta) tiles to the Fleet Pulse Bar atop the matrix
+        - Added per-account `EP` and `HONOR` data columns in the matrix table with automated dynamic rate shortening (`+X.Xk/M`) for values exceeding 10M to ensure tight, single-line alignment without overflow
+        - Extended `StatTrackerService` log parser to recognize `'experience points'`, `'ep'`, `'honor points'`, and `'honour points'` in bot logs
+    - **Optimized Map Width & Column Spacing**: Expanded the MAP column to 20 characters (fitting full event and Galaxy Gate titles like `Trial of Terror 7`, `Eternal Black Light`, etc. without truncation), automatically stripped raw markdown wave asterisks (`**7**` -> `7`), expanded column spacing across `URI` (11), `URI/HR` (10), `EP` (13), and `HONOR` (12) so values like `+4.388.989` and `+360.283` have ample breathing room and never touch adjacent columns or death counts, and removed the redundant `►` pointer arrow to keep row alignment clean against full-row cyan focus highlight
+    - **Fleet Summary Pulse Bar**: Prominently aggregates total fleet performance metrics: active running bots count (`X / Y Running`), total session Uridium earned across all accounts, combined fleet velocity (`Uri/h`), total Experience (`EP`), total Honor, and cumulative deaths
+    - **Interactive Controls & Direct Drill-Down**: Cursor navigation (`Up`/`Down`) with active row highlight, instant drill-down (`Enter`) directly into an account's Expanded Stats Dashboard (and smooth `Backspace` return), queue staging (`Space`), hot-swap (`S`), bot termination (`K`), and live Streamer Mode obfuscation (`O`)
+    - **Contextual Top Menu Preview**: Hovering over Stats & Fleet Matrix in the Top Menu displays a live snapshot of fleet totals and shortcuts in the right pane
+
+- On-Demand Account Log Cleaner (`Shift+L` Hotkey)
+    > One-key sweep of stale AstraBot log files across all accounts with running bot protection
+    - **Single-Key Global Sweep**: Press `Shift+L` anywhere in the app to immediately sweep all account `logs/` directories and loose root log files (`ingameLogs_*.txt`, `deaths_*.txt`, and timestamped console `.txt` files)
+    - **Running Bot Session Protection**: Safely detects running bots via `ProcessTrackerService` and resolves active log paths via `StatTrackerService` to protect active session files, ensuring ongoing telemetry tracking and zero runtime interruptions
+    - **Windows OS Error 32 Mitigation**: Built-in asynchronous retry mechanism handles brief file lock delays (`OS Error: 32`) on Windows file handles before proceeding
+    - **Status Bar Telemetry**: Reports files cleaned, human-readable disk space recovered (`KB` / `MB`), account count, and number of active bots protected
+    - **UI & Hotkey Guidance**: Added `Shift+L:clean` in `FooterBar`, documented in the Hotkeys tab, and added to the About release notes
+
 ## V0.1.5 A
 
 - Interactive Multi-Account Config Copying (`C` Hotkey & Yellow Palette Workspace)

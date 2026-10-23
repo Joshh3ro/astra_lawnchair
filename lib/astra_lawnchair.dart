@@ -1,10 +1,13 @@
 export 'src/models/account.dart';
 export 'src/models/account_stats.dart';
 export 'src/models/app_config.dart';
+export 'src/models/fleet_stats_snapshot.dart';
 export 'src/models/launch_target.dart';
 export 'src/models/running_session.dart';
 export 'src/services/config_service.dart';
+export 'src/services/fleet_log_service.dart';
 export 'src/services/launcher_service.dart';
+export 'src/services/log_cleaner_service.dart';
 export 'src/services/process_tracker_service.dart';
 export 'src/services/scanner_service.dart';
 export 'src/services/stat_tracker_service.dart';

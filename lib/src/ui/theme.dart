@@ -138,4 +138,16 @@ class LawnchairTheme {
     color: Colors.cyan,
     fontWeight: FontWeight.bold,
   );
+
+  // Matrix theme styles
+  static const TextStyle matrixHeader = TextStyle(
+    color: Colors.yellow,
+    fontWeight: FontWeight.bold,
+  );
+
+  static const TextStyle matrixRowFocused = TextStyle(
+    color: Colors.black,
+    backgroundColor: Colors.cyan,
+    fontWeight: FontWeight.bold,
+  );
 }
