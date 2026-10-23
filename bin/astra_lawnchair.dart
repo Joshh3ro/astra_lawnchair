@@ -1,6 +1,5 @@
-import 'package:nocterm/nocterm.dart';
-import 'package:astra_lawnchair/astra_lawnchair.dart';
+import 'astral.dart' as astral;
 
-void main() {
-  runApp(const AstraLawnchairApp());
+Future<void> main(List<String> args) async {
+  await astral.main(args);
 }

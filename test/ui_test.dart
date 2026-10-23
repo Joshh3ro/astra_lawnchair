@@ -65,7 +65,7 @@ void main() {
         expect(tester.terminalState, containsText('Shift+S'));
         expect(tester.terminalState, containsText('all'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.5'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.8'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -319,13 +319,10 @@ void main() {
 
         expect(tester.terminalState, containsText('TELEMETRY & STATS'));
         expect(tester.terminalState, containsText('StatsBotAccount'));
-
-        // Right pane displays stat card metrics
-        expect(tester.terminalState, containsText('ACCOUNT STATS: StatsBotAccount'));
-        expect(tester.terminalState, containsText('Uridium:'));
         expect(tester.terminalState, containsText('+100'));
-        expect(tester.terminalState, containsText('• Trinity Trials & Gear:'));
-        expect(tester.terminalState, containsText('Quantum Prism:'));
+        expect(tester.terminalState, containsText('FLEET BOTS'));
+        expect(tester.terminalState, containsText('TOTAL URIDIUM'));
+
         // Press Enter to dig into full-screen expanded telemetry & live charts
         await tester.sendKey(LogicalKey.enter);
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -343,6 +340,7 @@ void main() {
         expect(tester.terminalState, containsText('Ammunition & Rockets'));
         expect(tester.terminalState, containsText('Resources & Minerals'));
         expect(tester.terminalState, containsText('Trinity & Other'));
+        expect(tester.terminalState, containsText('Quantum Prism:'));
 
         // Press '1' to toggle Uridium chart off
         await tester.sendKey(LogicalKey.digit1);
@@ -508,7 +506,7 @@ void main() {
         97889,
       );
 
-      await testNocterm('running session obfuscation test', (tester) async {
+      await testNocterm('running session obfuscation test', size: const Size(120, 30), (tester) async {
         await tester.pumpComponent(
           MainScreen(
             config: testConfig,
@@ -567,15 +565,11 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await tester.pump();
 
-        // Stats left pane badge has RUNNING and PID
+        // Stats table shows RUNNING, Account #1, StealthPvP, obfuscated
         expect(tester.terminalState, containsText('TELEMETRY & STATS'));
         expect(tester.terminalState, containsText('Account #1'));
-        expect(tester.terminalState, containsText('RUNNING:'));
-        expect(tester.terminalState, containsText('97889'));
-
-        // Stats right pane details has RUNNING status and PID
-        expect(tester.terminalState, containsText('ACCOUNT STATS: Account #1'));
-        expect(tester.terminalState, containsText('RUNNING (PID: 97889)'));
+        expect(tester.terminalState, containsText('● RUNNING'));
+        expect(tester.terminalState, containsText('StealthPvP'));
         expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
 
         // 4. Dig into Expanded Telemetry & Live Charts
@@ -584,7 +578,7 @@ void main() {
         await tester.pump();
 
         expect(tester.terminalState, containsText('EXPANDED TELEMETRY & LIVE CHARTS: Account #1'));
-        expect(tester.terminalState, containsText('Expanded Telemetry: "Account #1"'));
+        expect(tester.terminalState, containsText('RUNNING (PID: 97889)'));
         expect(tester.terminalState, isNot(containsText('PrivateStreamerAccount')));
 
         // Pop back to Stats view, then pop back to Accounts
@@ -735,8 +729,8 @@ void main() {
 
         // Verify right pane displays preview of changelog before digging in
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG SUMMARY'));
-        expect(tester.terminalState, containsText('Latest Updates (v0.1.5):'));
-        expect(tester.terminalState, containsText('Batch Config Switch'));
+        expect(tester.terminalState, containsText('Latest Updates (v0.1.8):'));
+        expect(tester.terminalState, containsText('Fleet Session Log API'));
 
         // Open About tab
         await tester.sendKey(LogicalKey.enter);
@@ -746,10 +740,10 @@ void main() {
         // 2. Verify single PaneBox renders About header & changelog content
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG'));
         expect(tester.terminalState, containsText('A S T R A   L A W N C H A I R'));
-        expect(tester.terminalState, containsText('Version 0.1.5'));
+        expect(tester.terminalState, containsText('Version 0.1.8'));
         expect(tester.terminalState, containsText('Joshh3ro'));
         expect(tester.terminalState, containsText('UPDATE CHANGELOG & RELEASE NOTES'));
-        expect(tester.terminalState, containsText('• V0.1.5 A (Latest Update) •'));
+        expect(tester.terminalState, containsText('• V0.1.8 A (Latest Update) •'));
 
         // 3. Press Backspace to return to Top Menu
         await tester.sendKey(LogicalKey.backspace);

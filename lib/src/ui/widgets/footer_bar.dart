@@ -9,6 +9,8 @@ class FooterBar extends StatelessComponent {
   final bool isObfuscated;
   final bool isCopyMode;
   final bool canCopy;
+  final bool isFleetMatrix;
+  final bool isEscapeMenu;
 
   const FooterBar({
     super.key,
@@ -18,6 +20,8 @@ class FooterBar extends StatelessComponent {
     this.isObfuscated = false,
     this.isCopyMode = false,
     this.canCopy = false,
+    this.isFleetMatrix = false,
+    this.isEscapeMenu = false,
   });
 
   static Future<void> _openUrl(String url) async {
@@ -50,7 +54,7 @@ class FooterBar extends StatelessComponent {
               Row(
                 children: [
                   const Text(
-                    'Joshh3ro | v0.1.5 | ',
+                    'Joshh3ro | v0.1.8 | ',
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(
@@ -69,45 +73,87 @@ class FooterBar extends StatelessComponent {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 1),
           child: Row(
-            children: isCopyMode
+            children: isEscapeMenu
                 ? [
-                    _keyItem('Space', 'toggle'),
+                    _keyItem('Enter', 'select'),
                     const SizedBox(width: 1),
-                    _keyItem('A', 'all/none'),
+                    _keyItem('Esc', 'close'),
                     const SizedBox(width: 1),
-                    _keyItem('Enter/C', 'copy'),
+                    _keyItem('S', 'settings'),
                     const SizedBox(width: 1),
-                    _keyItem('Bksp', 'cancel'),
+                    _keyItem('G', 'fleet'),
+                    const SizedBox(width: 1),
+                    _keyItem('A', 'accounts'),
                     const SizedBox(width: 1),
                     _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
+                    const SizedBox(width: 1),
+                    _keyItem('Shift+L', 'clean'),
                     const SizedBox(width: 1),
                     _keyItem('Q', 'quit'),
                   ]
-                : [
-                    _keyItem('Space', 'select'),
-                    const SizedBox(width: 1),
-                    _keyItem('Enter', 'open'),
-                    const SizedBox(width: 1),
-                    _keyItem('Bksp', 'back'),
-                    const SizedBox(width: 1),
-                    _keyItem(runHotkey, 'run'),
-                    const SizedBox(width: 1),
-                    _keyItem('K', 'kill'),
-                    const SizedBox(width: 1),
-                    _keyItem('S', 'switch'),
-                    const SizedBox(width: 1),
-                    _keyItem('Shift+S', 'all'),
-                    const SizedBox(width: 1),
-                    if (canCopy) ...[
-                      _keyItem('C', 'copy'),
-                      const SizedBox(width: 1),
-                    ],
-                    _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
-                    const SizedBox(width: 1),
-                    _keyItem('Shift+R', 'refresh'),
-                    const SizedBox(width: 1),
-                    _keyItem('Q', 'quit'),
-                  ],
+                : (isCopyMode
+                    ? [
+                        _keyItem('Space', 'toggle'),
+                        const SizedBox(width: 1),
+                        _keyItem('A', 'all/none'),
+                        const SizedBox(width: 1),
+                        _keyItem('Enter/C', 'copy'),
+                        const SizedBox(width: 1),
+                        _keyItem('Bksp', 'cancel'),
+                        const SizedBox(width: 1),
+                        _keyItem('Esc', 'menu'),
+                        const SizedBox(width: 1),
+                        _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
+                        const SizedBox(width: 1),
+                        _keyItem('Q', 'quit'),
+                      ]
+                    : (isFleetMatrix
+                        ? [
+                            _keyItem('Enter', 'inspect'),
+                            const SizedBox(width: 1),
+                            _keyItem('Space', 'queue'),
+                            const SizedBox(width: 1),
+                            _keyItem('K', 'kill'),
+                            const SizedBox(width: 1),
+                            _keyItem('S', 'switch'),
+                            const SizedBox(width: 1),
+                            _keyItem('G', 'close'),
+                            const SizedBox(width: 1),
+                            _keyItem('Esc', 'menu'),
+                            const SizedBox(width: 1),
+                            _keyItem('Bksp', 'back'),
+                            const SizedBox(width: 1),
+                            _keyItem('Q', 'quit'),
+                          ]
+                        : [
+                            _keyItem('Space', 'select'),
+                            const SizedBox(width: 1),
+                            _keyItem('Enter', 'open'),
+                            const SizedBox(width: 1),
+                            _keyItem(runHotkey, 'run'),
+                            const SizedBox(width: 1),
+                            _keyItem('S', 'switch'),
+                            const SizedBox(width: 1),
+                            _keyItem('Shift+S', 'all'),
+                            const SizedBox(width: 1),
+                            if (canCopy) ...[
+                              _keyItem('C', 'copy'),
+                              const SizedBox(width: 1),
+                            ],
+                            _keyItem('K', 'kill'),
+                            const SizedBox(width: 1),
+                            _keyItem('O', isObfuscated ? 'reveal' : 'hide'),
+                            const SizedBox(width: 1),
+                            _keyItem('Shift+R', 'refresh'),
+                            const SizedBox(width: 1),
+                            _keyItem('Shift+L', 'clean'),
+                            const SizedBox(width: 1),
+                            _keyItem('G', 'fleet'),
+                            const SizedBox(width: 1),
+                            _keyItem('Esc', 'menu'),
+                            const SizedBox(width: 1),
+                            _keyItem('Q', 'quit'),
+                          ])),
           ),
         ),
       ],

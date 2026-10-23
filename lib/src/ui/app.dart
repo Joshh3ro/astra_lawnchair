@@ -1,8 +1,10 @@
 import 'package:nocterm/nocterm.dart';
+import '../cli/cli_options.dart';
 import '../models/account.dart';
 import '../models/account_stats.dart';
 import '../models/app_config.dart';
 import '../services/config_service.dart';
+import '../services/fleet_log_service.dart';
 import '../services/launcher_service.dart';
 import '../services/process_tracker_service.dart';
 import '../services/scanner_service.dart';
@@ -17,6 +19,8 @@ class AstraLawnchairApp extends StatefulComponent {
   final LauncherService? launcherService;
   final ProcessTrackerService? processTrackerService;
   final StatTrackerService? statTrackerService;
+  final FleetLogService? fleetLogService;
+  final CliOptions? cliOptions;
 
   const AstraLawnchairApp({
     super.key,
@@ -25,6 +29,8 @@ class AstraLawnchairApp extends StatefulComponent {
     this.launcherService,
     this.processTrackerService,
     this.statTrackerService,
+    this.fleetLogService,
+    this.cliOptions,
   });
 
   @override
@@ -37,6 +43,7 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
   late final LauncherService _launcherService;
   late final ProcessTrackerService _processTrackerService;
   late final StatTrackerService _statTrackerService;
+  late final FleetLogService _fleetLogService;
 
   bool _isLoading = true;
   AppConfig? _config;
@@ -47,16 +54,40 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
     super.initState();
     _configService = component.configService ?? ConfigService();
     _scannerService = component.scannerService ?? ScannerService();
-    _launcherService = component.launcherService ?? const LauncherService();
+    final isDryRun = component.cliOptions?.dryRun ?? false;
+    _launcherService = component.launcherService ?? LauncherService(isDryRun: isDryRun);
     _processTrackerService = component.processTrackerService ??
         ProcessTrackerService(baseDir: _configService.baseDir);
     _statTrackerService = component.statTrackerService ?? StatTrackerService();
+    _fleetLogService = component.fleetLogService ??
+        FleetLogService(baseDir: _configService.baseDir);
 
     _initialize();
   }
 
   Future<void> _initialize() async {
-    final loadedConfig = await _configService.loadConfig();
+    await _fleetLogService.init();
+
+    final cli = component.cliOptions;
+    var loadedConfig = await _configService.loadConfig();
+
+    if (cli?.rootPath != null && cli!.rootPath!.isNotEmpty) {
+      if (loadedConfig == null) {
+        loadedConfig = AppConfig(rootPath: cli.rootPath!);
+      } else {
+        loadedConfig = loadedConfig.copyWith(rootPath: cli.rootPath!);
+      }
+    }
+
+    if (loadedConfig != null && cli != null) {
+      if (cli.client != null && cli.client!.isNotEmpty) {
+        loadedConfig = loadedConfig.copyWith(clientName: cli.client!);
+      }
+      if (cli.staggerDelayMs != null) {
+        loadedConfig = loadedConfig.copyWith(staggerDelayMs: cli.staggerDelayMs!);
+      }
+    }
+
     if (loadedConfig != null && loadedConfig.rootPath.isNotEmpty) {
       // Load cached accounts
       var accounts = await _scannerService.loadCachedAccounts();
@@ -117,6 +148,14 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
       );
     }
 
+    final cli = component.cliOptions;
+    NavigationLevel? initialNav;
+    if (cli?.startInFleet == true) {
+      initialNav = NavigationLevel.fleetMatrix;
+    } else if (cli?.startInStats == true) {
+      initialNav = NavigationLevel.stats;
+    }
+
     return MainScreen(
       config: currentConfig,
       configService: _configService,
@@ -124,7 +163,10 @@ class _AstraLawnchairAppState extends State<AstraLawnchairApp> {
       launcherService: _launcherService,
       processTrackerService: _processTrackerService,
       statTrackerService: _statTrackerService,
+      fleetLogService: _fleetLogService,
       initialAccounts: _accounts,
+      initialObfuscated: cli?.streamerMode,
+      initialNavLevel: initialNav,
     );
   }
 }

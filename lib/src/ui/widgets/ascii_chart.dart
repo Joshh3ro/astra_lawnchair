@@ -74,7 +74,11 @@ class AsciiChart extends StatelessComponent {
           final currentVal = s.values.isEmpty ? 0 : s.values.last;
           final pct = globalMax > 0 ? (currentVal / globalMax).clamp(0.0, 1.0) : 0.0;
 
-          final filledChars = (pct * barWidth).round().clamp(0, barWidth);
+          // Reserve end padding so the gauge is never 100% full solid color,
+          // ensuring clean visual margin and breathing room while maintaining consistent bar width.
+          final endPadding = (barWidth * 0.08).round().clamp(3, 4);
+          final maxFillWidth = barWidth - endPadding;
+          final filledChars = (pct * maxFillWidth).round().clamp(0, maxFillWidth);
           final emptyChars = barWidth - filledChars;
           final filledBar = '█' * filledChars;
           final emptyBar = '░' * emptyChars;

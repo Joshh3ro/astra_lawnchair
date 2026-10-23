@@ -70,6 +70,29 @@ class NumberFormatter {
     return formatNumber(rate.round());
   }
 
+  /// Formats byte sizes into human-readable strings (B, KB, MB, GB).
+  ///
+  /// Examples:
+  /// - `512` -> `512 B`
+  /// - `1024` -> `1 KB`
+  /// - `250000` -> `244.1 KB`
+  /// - `15000000` -> `14.3 MB`
+  /// - `2500000000` -> `2.33 GB`
+  static String formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      final kb = bytes / 1024.0;
+      return '${_trimTrailingZeros(kb.toStringAsFixed(1))} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      final mb = bytes / (1024.0 * 1024.0);
+      return '${_trimTrailingZeros(mb.toStringAsFixed(1))} MB';
+    }
+    final gb = bytes / (1024.0 * 1024.0 * 1024.0);
+    return '${_trimTrailingZeros(gb.toStringAsFixed(2))} GB';
+  }
+
   static String _trimTrailingZeros(String formatted) {
     if (!formatted.contains('.')) return formatted;
     var trimmed = formatted;
@@ -82,3 +105,4 @@ class NumberFormatter {
     return trimmed;
   }
 }
+
