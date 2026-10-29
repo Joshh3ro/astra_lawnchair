@@ -25,6 +25,7 @@ A Dart terminal UI (TUI) app, built with the **Nocterm** framework, that replace
 - **On-Demand Log Cleaner**: Global `Shift+L` sweep to purge stale logs and reclaim disk space while protecting active bot sessions.
 - **First-Time Setup**: Path validation check and auto-discovery on initial run.
 - **Instant Caching**: Discovered accounts and configs are cached (`accounts.json`, `<Account>-Configs.json`) so startup remains instantaneous.
+- **Modular Public API (`lib/api/`)**: High-level, decoupled API facade (`AstraApi`) for user expandability, external scripts, Discord bots, and automated fleet orchestration.
 - **Detached Process Execution**: Runs each AstraBot instance independently with custom `--datFile`, `--client`, and `--config` arguments.
 - **Staggered Delays**: Configurable pause (default 400ms) between launches to avoid server throttling.
 
@@ -119,6 +120,34 @@ dart run bin/astral.dart [OPTIONS]
   Credits:     +14,200,000
   Deaths:      1
   ```
+
+## Programmatic Public API (`lib/api/`)
+
+Astra Lawnchair exposes a high-level programmatic facade for **user expandability**, Discord bots, custom automation daemons, and external web dashboards:
+
+```dart
+import 'package:astra_lawnchair/api/api.dart';
+
+void main() async {
+  // Initialize the unified client
+  final astra = await AstraApi.initialize(rootPath: r'C:\Bots\AstraBot');
+
+  // Discover and control accounts
+  final accounts = await astra.accounts.getAccounts();
+  await astra.bots.launch(accounts.first, configName: 'Default');
+
+  // Query live fleet telemetry and session deltas
+  final snapshot = astra.fleet.captureSnapshot();
+  final delta = astra.fleet.calculateSessionDelta(snapshot);
+  print('Fleet Uri delta: +${delta?.netUridium}');
+
+  // Perform safe log maintenance
+  final cleanResult = await astra.logs.cleanLogs();
+  print('Freed ${cleanResult.formattedBytes} across ${cleanResult.filesDeleted} log files');
+}
+```
+
+See [`lib/api/README.md`](lib/api/README.md) for full API reference and examples.
 
 ## Running & Building
 

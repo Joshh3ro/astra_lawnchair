@@ -54,7 +54,7 @@ class FooterBar extends StatelessComponent {
               Row(
                 children: [
                   const Text(
-                    'Joshh3ro | v0.1.8 | ',
+                    'Joshh3ro | v0.1.9 | ',
                     style: LawnchairTheme.footerDesc,
                   ),
                   GestureDetector(

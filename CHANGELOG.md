@@ -1,3 +1,16 @@
+## V0.1.9 A
+
+- Modular Public API Layer (`lib/api/`)
+    > First-class, decoupled programmatic API architecture for user expandability, external scripts, Discord bots, and automation daemons
+    - **Unified Entrypoint Facade (`AstraApi`)**: Initialized via `AstraApi.initialize()`, coordinating all core subsystems without coupling to TUI rendering
+    - **`AccountApi`**: Full account discovery, config inspection, per-account caching, and atomic cross-account profile copying (`copyConfig`, `copyConfigToMultiple`)
+    - **`BotApi`**: Process execution, queue staging with custom stagger delays, automated hot-swapping (`hotSwap`), PID session queries, and process termination
+    - **`FleetApi`**: Real-time telemetry monitoring, immutable snapshot generation (`captureSnapshot`), session delta calculations (`calculateSessionDelta`), and rolling disk history
+    - **`LogApi`**: Automated stale log sweeping with active bot protection, log file discovery, and disk size calculations
+    - **`ConfigApi`**: Persistent application configuration management with in-place partial updating
+    - **Public Barrel Export (`lib/api/api.dart`)**: Single clean import surface exposing all API classes, controllers, and underlying data models
+    - **Comprehensive Developer Quickstart**: Embedded guide in `lib/api/README.md` and Obsidian knowledge base
+
 ## V0.1.8 A
 
 - Fleet Session Stats Logging & Delta Calculation API

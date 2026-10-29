@@ -41,6 +41,12 @@ class StatTrackerService {
 
   AccountStats? getStats(String accountName) => _statsMap[accountName];
 
+  /// Returns all currently tracked [AccountStats] instances.
+  List<AccountStats> get allStats => _statsMap.values.toList();
+
+  /// Unmodifiable map of all account statistics keyed by account name.
+  Map<String, AccountStats> get statsMap => Map.unmodifiable(_statsMap);
+
   /// Restores pre-existing or persisted stats for an account
   void restoreStats(String accountName, AccountStats stats) {
     _statsMap[accountName] = stats;

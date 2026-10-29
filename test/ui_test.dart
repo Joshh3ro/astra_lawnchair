@@ -65,7 +65,7 @@ void main() {
         expect(tester.terminalState, containsText('Shift+S'));
         expect(tester.terminalState, containsText('all'));
         expect(tester.terminalState, containsText('Shift+R'));
-        expect(tester.terminalState, containsText('Joshh3ro | v0.1.8'));
+        expect(tester.terminalState, containsText('Joshh3ro | v0.1.9'));
         expect(tester.terminalState, containsText('(GitHub)'));
       });
     });
@@ -729,7 +729,7 @@ void main() {
 
         // Verify right pane displays preview of changelog before digging in
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG SUMMARY'));
-        expect(tester.terminalState, containsText('Latest Updates (v0.1.8):'));
+        expect(tester.terminalState, containsText('Latest Updates (v0.1.9):'));
         expect(tester.terminalState, containsText('Fleet Session Log API'));
 
         // Open About tab
@@ -740,10 +740,10 @@ void main() {
         // 2. Verify single PaneBox renders About header & changelog content
         expect(tester.terminalState, containsText('ABOUT & CHANGELOG'));
         expect(tester.terminalState, containsText('A S T R A   L A W N C H A I R'));
-        expect(tester.terminalState, containsText('Version 0.1.8'));
+        expect(tester.terminalState, containsText('Version 0.1.9'));
         expect(tester.terminalState, containsText('Joshh3ro'));
         expect(tester.terminalState, containsText('UPDATE CHANGELOG & RELEASE NOTES'));
-        expect(tester.terminalState, containsText('• V0.1.8 A (Latest Update) •'));
+        expect(tester.terminalState, containsText('• V0.1.9 A (Latest Update) •'));
 
         // 3. Press Backspace to return to Top Menu
         await tester.sendKey(LogicalKey.backspace);
