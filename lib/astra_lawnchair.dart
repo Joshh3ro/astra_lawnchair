@@ -1,3 +1,4 @@
+export 'api/api.dart';
 export 'src/models/account.dart';
 export 'src/models/account_stats.dart';
 export 'src/models/app_config.dart';

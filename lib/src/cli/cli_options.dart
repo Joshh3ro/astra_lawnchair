@@ -95,7 +95,7 @@ class CliOptions {
   }
 
   /// Formatted usage and options guide for terminal output.
-  static String getHelpText({String version = '0.1.8'}) {
+  static String getHelpText({String version = '0.1.9'}) {
     return '''
 Astra Lawnchair (astral) v$version
 Fast keyboard-driven Terminal Launcher & Fleet Telemetry Dashboard for AstraBot

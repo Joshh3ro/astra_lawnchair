@@ -12,7 +12,7 @@ Future<void> main(List<String> args) async {
   }
 
   if (options.showVersion) {
-    stdout.writeln('Astra Lawnchair (astral) v0.1.8');
+    stdout.writeln('Astra Lawnchair (astral) v0.1.9');
     exit(0);
   }
 

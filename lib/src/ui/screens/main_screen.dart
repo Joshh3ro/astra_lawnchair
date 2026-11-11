@@ -2400,7 +2400,7 @@ class _MainScreenState extends State<MainScreen> {
             Row(
               children: const [
                 Text('Astra Lawnchair ', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
-                Text('v0.1.8', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('v0.1.9', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 Spacer(),
                 Text('by Joshh3ro', style: LawnchairTheme.footerDesc),
               ],
@@ -2414,10 +2414,11 @@ class _MainScreenState extends State<MainScreen> {
             const Divider(),
             const SizedBox(height: 1),
             const Text(
-              'Latest Updates (v0.1.8):',
+              'Latest Updates (v0.1.9):',
               style: LawnchairTheme.statSectionHeader,
             ),
             const SizedBox(height: 1),
+            _changelogPreviewBullet('Modular API Layer (lib/api/)', 'First-class public API facade & sub-APIs for user expandability'),
             _changelogPreviewBullet('Fleet Session Log API', 'Persistent snapshot logging & live session delta tracking'),
             _changelogPreviewBullet('astral CLI Executable', 'Direct console launch options (-r, -o, -g, -c, -s, --dry-run)'),
             _changelogPreviewBullet('Escape Quick Menu (Esc)', 'Global cheatsheet modal with direct action shortcuts'),
@@ -2893,7 +2894,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 1),
             const Text(
-              'Version 0.1.8 | Created by Joshh3ro | Built with Nocterm',
+              'Version 0.1.9 | Created by Joshh3ro | Built with Nocterm',
               style: LawnchairTheme.footerDesc,
               textAlign: TextAlign.center,
             ),
@@ -2924,9 +2925,24 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 2),
 
+            // Release V0.1.9 A
+            _aboutReleaseCard(
+              version: 'V0.1.9 A (Latest Update)',
+              date: '2026-10-29',
+              highlights: [
+                'Modular Public API Layer (lib/api/): First-class architecture decoupling core Astra Lawnchair engine logic for user expandability, external scripts, Discord bots, and dashboards.',
+                'AstraApi Master Coordinator: Unified entrypoint with AstraApi.initialize() providing high-level access to AccountApi, BotApi, FleetApi, LogApi, and ConfigApi.',
+                'Modular Sub-APIs: Specialized sub-APIs for account discovery/config copying (AccountApi), bot lifecycle/hot-swapping/queues (BotApi), live telemetry snapshots and session deltas (FleetApi), and automated log sweeping (LogApi).',
+                'Comprehensive Developer Notes & Tests: Embedded documentation in lib/api/README.md and end-to-end integration test coverage in test/astra_api_test.dart.',
+              ],
+            ),
+            const SizedBox(height: 1),
+            const Divider(),
+            const SizedBox(height: 1),
+
             // Release V0.1.8 A
             _aboutReleaseCard(
-              version: 'V0.1.8 A (Latest Update)',
+              version: 'V0.1.8 A',
               date: '2026-10-23',
               highlights: [
                 'Fleet Session Stats Logging & Delta Calculation API: Structured persistence (configs/fleet_sessions.json) tracking overall fleet telemetry snapshots, automatic session baseline capture, and real-time session delta calculations.',
